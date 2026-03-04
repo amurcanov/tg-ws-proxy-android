@@ -39,7 +39,7 @@ _dc_opt: Dict[int, Optional[str]] = {}
 # DCs where WS is known to fail (302 redirect)
 # Raw TCP fallback will be used instead
 # Keyed by (dc, is_media)
-_ws_blacklist: Set[Tuple[int, bool]] = {}
+_ws_blacklist: Set[Tuple[int, bool]] = set()
 
 # Rate-limit re-attempts per (dc, is_media)
 _dc_fail_until: Dict[Tuple[int, bool], float] = {}
