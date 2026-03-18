@@ -18,8 +18,8 @@ DEFAULT_PORT = 1080
 log = logging.getLogger('tg-ws-proxy')
 
 _TCP_NODELAY = True
-_RECV_BUF = 65536
-_SEND_BUF = 65536
+_RECV_BUF = 256 * 1024
+_SEND_BUF = 256 * 1024
 _WS_POOL_SIZE = 4
 _WS_POOL_MAX_AGE = 120.0
 
