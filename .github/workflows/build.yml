@@ -17,7 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -319,11 +319,11 @@ jobs:
             dist/TgWsProxy_linux_amd64.deb
 
   release:
-    needs: [build, build-win7, build-macos, build-linux]
+    needs: [build-windows, build-win7, build-macos, build-linux]
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.make_release == 'true' }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: TgWsProxy*
           path: dist
