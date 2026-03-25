@@ -54,12 +54,12 @@ const (
 	defaultRecvBuf = 256 * 1024
 	defaultSendBuf = 256 * 1024
 	wsPoolSize     = 4
-	wsPoolMaxAge   = 90.0  // seconds — reduced from 120 to catch stale faster
+	wsPoolMaxAge   = 60.0  // seconds — reduced from 90 to 60 for VPNs
 	wsBridgeIdle   = 120.0 // seconds — max idle time before bridge considers WS dead
 
 	dcFailCooldown = 30.0 // seconds
 	wsFailTimeout  = 2.0  // seconds
-	poolMaintainInterval = 30 // seconds — how often pool evicts stale and refills
+	poolMaintainInterval = 15 // seconds — frequent to send pings/keep-alives
 )
 
 var (
@@ -169,6 +169,7 @@ var ipToDC = map[string]dcInfo{
 	// DC2
 	"149.154.167.41":  {2, false}, "149.154.167.50": {2, false},
 	"149.154.167.51":  {2, false}, "149.154.167.220": {2, false},
+	"149.154.167.35":  {2, false}, "149.154.167.36": {2, false},
 	"95.161.76.100":   {2, false},
 	"149.154.167.151": {2, true}, "149.154.167.222": {2, true},
 	"149.154.167.223": {2, true}, "149.154.162.123": {2, true},
@@ -242,7 +243,7 @@ func (s *Stats) Summary() string {
 	ph := s.poolHits.Load()
 	pm := s.poolMisses.Load()
 	return fmt.Sprintf(
-		"total=%d ws=%d tcp_fb=%d http_skip=%d pass=%d err=%d pool=%d/%d up=%s down=%s",
+		"total=%d ws=%d tcp_fb=%d http_skip=%d pass=%d err=%d pool_hits=%d/%d up=%s down=%s",
 		s.connectionsTotal.Load(),
 		s.connectionsWs.Load(),
 		s.connectionsTcpFallback.Load(),
@@ -552,6 +553,17 @@ func (ws *RawWebSocket) Close() {
 	_, _ = ws.conn.Write(frame)
 	ws.mu.Unlock()
 	_ = ws.conn.Close()
+}
+
+func (ws *RawWebSocket) SendPing() error {
+	if ws.closed.Load() {
+		return fmt.Errorf("WebSocket closed")
+	}
+	frame := buildFrame(opPing, []byte{}, true)
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	_, err := ws.conn.Write(frame)
+	return err
 }
 
 func buildFrame(opcode int, data []byte, mask bool) []byte {
@@ -992,6 +1004,12 @@ func (p *WsPool) Maintain(ctx context.Context, dcOptMap map[int]string) {
 					if age > wsPoolMaxAge || e.ws.closed.Load() {
 						go e.ws.Close()
 					} else {
+						// Send ping to keep VPN NAT session alive, and actively close if network is dead
+						go func(ws *RawWebSocket) {
+							if err := ws.SendPing(); err != nil {
+								ws.Close()
+							}
+						}(e.ws)
 						fresh = append(fresh, e)
 					}
 				}
@@ -1014,6 +1032,16 @@ func (p *WsPool) Maintain(ctx context.Context, dcOptMap map[int]string) {
 			}
 		}
 	}
+}
+
+func (p *WsPool) IdleCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	count := 0
+	for _, bucket := range p.idle {
+		count += len(bucket)
+	}
+	return count
 }
 
 var wsPool = newWsPool()
@@ -1426,7 +1454,7 @@ func handleClient(ctx context.Context, conn net.Conn) {
 	dcOptMu.RUnlock()
 
 	if !dcOk || !dcConfigured {
-		logWarn.Printf("[%s] unknown DC%d for %s:%d -> TCP passthrough", label, dc, dst, port)
+		logDebug.Printf("[%s] unknown DC%d for %s:%d -> TCP passthrough", label, dc, dst, port)
 		tcpFallback(ctx, conn, dst, port, init, label, dc, isMedia)
 		return
 	}
@@ -1565,7 +1593,7 @@ func handleClient(ctx context.Context, conn net.Conn) {
 
 	// Send init packet
 	if err := ws.Send(init); err != nil {
-		logWarn.Printf("[%s] failed to send init via WS: %v", label, err)
+		logDebug.Printf("[%s] reconnecting via TCP fallback (WS broken by NAT): %v", label, err)
 		ws.Close()
 		tcpFallback(ctx, conn, dst, port, init, label, dc, isMedia)
 		return
@@ -1651,7 +1679,8 @@ func runProxy(ctx context.Context, host string, port int, dcOptMap map[int]strin
 				if len(blParts) > 0 {
 					bl = strings.Join(blParts, ", ")
 				}
-				logInfo.Printf("stats: %s | ws_bl: %s", stats.Summary(), bl)
+				idleCount := wsPool.IdleCount()
+				logInfo.Printf("stats: %s idle_conns=%d | ws_bl: %s", stats.Summary(), idleCount, bl)
 			}
 		}
 	}()
