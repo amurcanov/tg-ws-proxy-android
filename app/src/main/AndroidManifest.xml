@@ -20,7 +20,7 @@
         tools:targetApi="33">
         
         <activity
-            android:name="com.example.tgwsproxy.MainActivity"
+            android:name="com.amurcanov.tgwsproxy.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize"
             android:theme="@android:style/Theme.NoTitleBar">
@@ -31,7 +31,7 @@
         </activity>
 
         <service
-            android:name="com.example.tgwsproxy.ProxyService"
+            android:name="com.amurcanov.tgwsproxy.ProxyService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Proxy Server" />
