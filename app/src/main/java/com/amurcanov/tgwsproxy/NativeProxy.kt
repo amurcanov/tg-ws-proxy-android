@@ -8,12 +8,11 @@ interface ProxyLibrary : Library {
     companion object {
         val INSTANCE = Native.load("tgwsproxy", ProxyLibrary::class.java) as ProxyLibrary
     }
-    
-    fun StartProxy(host: String, port: Int, dcIps: String, verbose: Int): Int
+
+    fun StartProxy(host: String, port: Int, dcIps: String, secret: String, verbose: Int): Int
     fun StopProxy(): Int
     fun SetPoolSize(size: Int)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
-    fun SetSecret(secret: String)
     fun SetFakeTls(enabled: Int, domain: String)
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
@@ -21,10 +20,9 @@ interface ProxyLibrary : Library {
 }
 
 object NativeProxy {
-    fun startProxy(host: String, port: Int, dcIps: String, verbose: Int): Int {
-        return ProxyLibrary.INSTANCE.StartProxy(host, port, dcIps, verbose)
-    }
-    fun stopProxy(): Int {
+    fun startProxy(host: String, port: Int, dcIps: String, secret: String, verbose: Int): Int {
+        return ProxyLibrary.INSTANCE.StartProxy(host, port, dcIps, secret, verbose)
+    }    fun stopProxy(): Int {
         return ProxyLibrary.INSTANCE.StopProxy()
     }
     fun setPoolSize(size: Int) {
@@ -36,9 +34,6 @@ object NativeProxy {
             if (priority) 1 else 0,
             userDomain
         )
-    }
-    fun setSecret(secret: String) {
-        ProxyLibrary.INSTANCE.SetSecret(secret)
     }
     fun setFakeTls(enabled: Boolean, domain: String = "") {
         ProxyLibrary.INSTANCE.SetFakeTls(if (enabled) 1 else 0, domain)

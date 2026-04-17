@@ -5,8 +5,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -15,14 +13,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,7 +30,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amurcanov.tgwsproxy.ProxyService
 import com.amurcanov.tgwsproxy.SettingsStore
@@ -97,9 +91,22 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val scope = rememberCoroutineScope()
     val isRunning by ProxyService.isRunning.collectAsStateWithLifecycle()
 
+    val isReady by settingsStore.isReady.collectAsStateWithLifecycle(initialValue = false)
+    val isExperimental by settingsStore.isExperimentalMode.collectAsStateWithLifecycle(initialValue = false)
+
     val savedIsDcAuto by settingsStore.isDcAuto.collectAsStateWithLifecycle(initialValue = true)
-    val savedDc2 by settingsStore.dc2.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc1 by settingsStore.dc1.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc2 by settingsStore.dc2.collectAsStateWithLifecycle(initialValue = "149.154.167.220")
+    val savedDc3 by settingsStore.dc3.collectAsStateWithLifecycle(initialValue = "")
     val savedDc4 by settingsStore.dc4.collectAsStateWithLifecycle(initialValue = "149.154.167.220")
+    val savedDc5 by settingsStore.dc5.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc203 by settingsStore.dc203.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc1m by settingsStore.dc1m.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc2m by settingsStore.dc2m.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc3m by settingsStore.dc3m.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc4m by settingsStore.dc4m.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc5m by settingsStore.dc5m.collectAsStateWithLifecycle(initialValue = "")
+    val savedDc203m by settingsStore.dc203m.collectAsStateWithLifecycle(initialValue = "")
     val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
@@ -107,9 +114,32 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
 
+    if (!isReady) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(24.dp),
+                strokeWidth = 2.dp
+            )
+        }
+        return
+    }
+
     var isDcAuto by rememberSaveable(savedIsDcAuto) { mutableStateOf(savedIsDcAuto) }
-    var dc2Text by rememberSaveable(savedDc2) { mutableStateOf(savedDc2) }
-    var dc4Text by rememberSaveable(savedDc4) { mutableStateOf(savedDc4) }
+    var experimentalMode by rememberSaveable(isExperimental) { mutableStateOf(isExperimental) }
+    var dc1Text by rememberSaveable(savedDc1) { mutableStateOf(savedDc1) }
+    var dc2Text by rememberSaveable(savedDc2) { mutableStateOf(if(savedDc2.isEmpty()) "149.154.167.220" else savedDc2) }
+    var dc3Text by rememberSaveable(savedDc3) { mutableStateOf(savedDc3) }
+    var dc4Text by rememberSaveable(savedDc4) { mutableStateOf(if(savedDc4.isEmpty()) "149.154.167.220" else savedDc4) }
+    var dc5Text by rememberSaveable(savedDc5) { mutableStateOf(savedDc5) }
+    var dc203Text by rememberSaveable(savedDc203) { mutableStateOf(savedDc203) }
+    var dc1mText by rememberSaveable(savedDc1m) { mutableStateOf(savedDc1m) }
+    var dc2mText by rememberSaveable(savedDc2m) { mutableStateOf(savedDc2m) }
+    var dc3mText by rememberSaveable(savedDc3m) { mutableStateOf(savedDc3m) }
+    var dc4mText by rememberSaveable(savedDc4m) { mutableStateOf(savedDc4m) }
+    var dc5mText by rememberSaveable(savedDc5m) { mutableStateOf(savedDc5m) }
+    var dc203mText by rememberSaveable(savedDc203m) { mutableStateOf(savedDc203m) }
+
     var portText by rememberSaveable(savedPort) { mutableStateOf(savedPort) }
     var selectedPoolSize by rememberSaveable(savedPoolSize) { mutableIntStateOf(savedPoolSize) }
     var cfEnabled by rememberSaveable(savedCfEnabled) { mutableStateOf(savedCfEnabled) }
@@ -134,7 +164,9 @@ fun SettingsTab(settingsStore: SettingsStore) {
         saveJob = scope.launch {
             delay(300)
             settingsStore.saveAll(
-                isDcAuto, dc2Text, dc4Text, portText, selectedPoolSize,
+                isDcAuto, dc1Text, dc2Text, dc3Text, dc4Text, dc5Text, dc203Text,
+                dc1mText, dc2mText, dc3mText, dc4mText, dc5mText, dc203mText,
+                experimentalMode, portText, selectedPoolSize,
                 cfEnabled, customCfDomainEnabled, customCfDomain, secretKeyText
             )
         }
@@ -145,10 +177,20 @@ fun SettingsTab(settingsStore: SettingsStore) {
 
     if (showIpSetupDialog) {
         IpSetupDialog(
-            dc2Text = dc2Text,
-            onDc2Change = { dc2Text = it; scheduleSave() },
-            dc4Text = dc4Text,
-            onDc4Change = { dc4Text = it; scheduleSave() },
+            isExperimental = experimentalMode,
+            onExperimentalChange = { experimentalMode = it; scheduleSave() },
+            dc1Text = dc1Text, onDc1Change = { dc1Text = it; scheduleSave() },
+            dc2Text = dc2Text, onDc2Change = { dc2Text = it; scheduleSave() },
+            dc3Text = dc3Text, onDc3Change = { dc3Text = it; scheduleSave() },
+            dc4Text = dc4Text, onDc4Change = { dc4Text = it; scheduleSave() },
+            dc5Text = dc5Text, onDc5Change = { dc5Text = it; scheduleSave() },
+            dc203Text = dc203Text, onDc203Change = { dc203Text = it; scheduleSave() },
+            dc1mText = dc1mText, onDc1mChange = { dc1mText = it; scheduleSave() },
+            dc2mText = dc2mText, onDc2mChange = { dc2mText = it; scheduleSave() },
+            dc3mText = dc3mText, onDc3mChange = { dc3mText = it; scheduleSave() },
+            dc4mText = dc4mText, onDc4mChange = { dc4mText = it; scheduleSave() },
+            dc5mText = dc5mText, onDc5mChange = { dc5mText = it; scheduleSave() },
+            dc203mText = dc203mText, onDc203mChange = { dc203mText = it; scheduleSave() },
             onDismiss = { showIpSetupDialog = false }
         )
     }
@@ -157,24 +199,27 @@ fun SettingsTab(settingsStore: SettingsStore) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
-        Text(
-            text = "Настройки",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
-        )
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
+            Text(
+                text = "Настройки",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        AppSectionCard {
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.Public, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
@@ -191,9 +236,9 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     label = { Text("Порт") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
@@ -202,8 +247,8 @@ fun SettingsTab(settingsStore: SettingsStore) {
                 OutlinedButton(
                     onClick = { showIpSetupDialog = true },
                     enabled = !cfEnabled && !isRunning,
-                    modifier = Modifier.fillMaxWidth().height(40.dp),
-                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
                         disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -212,66 +257,22 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     ),
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = if (cfEnabled || isRunning) 0.2f else 0.5f))
                 ) {
-                    Icon(Icons.Default.Settings, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text(if (cfEnabled) "Авто" else "Настроить адреса DC", fontWeight = FontWeight.SemiBold)
-                }
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Cloud, null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Text(
-                            "CloudFlare CDN",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                    Icon(Icons.Default.Settings, null, Modifier.size(20.dp))
+                    if (cfEnabled) {
+                        Spacer(Modifier.width(8.dp))
+                        Text("Авто (Включён CF)", fontWeight = FontWeight.SemiBold)
+                    } else {
+                        Spacer(Modifier.width(8.dp))
+                        Text("Настроить адреса DC", fontWeight = FontWeight.SemiBold)
                     }
-                    Switch(
-                        checked = cfEnabled,
-                        onCheckedChange = { 
-                            cfEnabled = it
-                            isDcAuto = it
-                            scheduleSave() 
-                        },
-                        enabled = !isRunning
-                    )
                 }
             }
-        }
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
             Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Icon(Icons.Default.Layers, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
@@ -286,19 +287,27 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(4, 6, 8).forEach { size ->
+                    val poolOptions = listOf(2, 4, 6)
+                    poolOptions.forEach { size ->
                         PoolChip(
                             label = "$size",
                             selected = selectedPoolSize == size,
                             enabled = !isRunning,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).height(48.dp)
                         ) {
                             selectedPoolSize = size
                             scheduleSave()
                         }
                     }
                 }
-                Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), modifier = Modifier.padding(vertical = 4.dp))
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -320,9 +329,9 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     onValueChange = {},
                     readOnly = true,
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    textStyle = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
                     trailingIcon = {
                         IconButton(
                             onClick = {
@@ -342,136 +351,43 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     )
                 )
             }
-        }
 
-        Spacer(Modifier.height(4.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
-        val buttonColor by animateColorAsState(
-            targetValue = if (isRunning) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-            animationSpec = tween(400),
-            label = "btn_color"
-        )
-        Button(
-            onClick = {
-                if (isRunning) {
-                    val stopIntent = Intent(context, ProxyService::class.java).apply {
-                        action = ProxyService.ACTION_STOP
-                    }
-                    context.startService(stopIntent)
-                } else {
-                    val port = portText.toIntOrNull()
-                    if (port == null) {
-                        Toast.makeText(context, "Неверный порт", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    
-                    val parsedIps = buildList {
-                        if (!isDcAuto) {
-                            if (dc2Text.isNotBlank()) add("2:${dc2Text.trim()}")
-                            if (dc4Text.isNotBlank()) add("4:${dc4Text.trim()}")
-                        }
-                    }.joinToString(",")
-
-                    saveJob?.cancel()
-                    scope.launch {
-                        settingsStore.saveAll(
-                            isDcAuto, dc2Text, dc4Text, portText, selectedPoolSize,
-                            cfEnabled, customCfDomainEnabled, customCfDomain, secretKeyText
-                        )
-                    }
-                    val startIntent = Intent(context, ProxyService::class.java).apply {
-                        action = ProxyService.ACTION_START
-                        putExtra(ProxyService.EXTRA_PORT, port)
-                        putExtra(ProxyService.EXTRA_IPS, parsedIps)
-                        putExtra(ProxyService.EXTRA_POOL_SIZE, selectedPoolSize)
-                        putExtra(ProxyService.EXTRA_CFPROXY_ENABLED, cfEnabled)
-                        putExtra(ProxyService.EXTRA_CFPROXY_PRIORITY, true)
-                        putExtra(ProxyService.EXTRA_CFPROXY_DOMAIN, if (customCfDomainEnabled && cfEnabled) customCfDomain.trim() else "")
-                        putExtra(ProxyService.EXTRA_SECRET_KEY, secretKeyText.trim())
-                    }
-                    ContextCompat.startForegroundService(context, startIntent)
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = buttonColor)
-        ) {
-            Icon(
-                imageVector = if (isRunning) Icons.Default.Stop else Icons.Default.PowerSettingsNew,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp)
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = if (isRunning) "Остановить" else "Запустить прокси",
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        val port = portText.toIntOrNull() ?: 1443
-        val secretForUrl = remember(secretKeyText) {
-            val raw = secretKeyText.trim()
-            if (raw.isNotEmpty()) raw else "00000000000000000000000000000000"
-        }
-        val proxyUrl = "tg://proxy?server=127.0.0.1&port=$port&secret=dd$secretForUrl"
-        val telegramBtnColor by animateColorAsState(
-            targetValue = if (isRunning) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-            animationSpec = tween(400),
-            label = "tg_btn_color"
-        )
-        Button(
-            onClick = { openTelegram(context, proxyUrl) },
-            enabled = isRunning,
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-            shape = RoundedCornerShape(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = telegramBtnColor, contentColor = MaterialTheme.colorScheme.onSurface)
-        ) {
-            Text("Применить в Telegram", fontWeight = FontWeight.SemiBold)
-        }
-
-        Text(
-            text = "или",
-            modifier = Modifier.fillMaxWidth(),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Surface(
-            onClick = {
-                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText("Proxy URL", proxyUrl)
-                clipboard.setPrimaryClip(clip)
-                Toast.makeText(context, "Ссылка скопирована", Toast.LENGTH_SHORT).show()
-            },
-            shape = RoundedCornerShape(14.dp),
-            color = androidx.compose.ui.graphics.Color.Transparent,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-            modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = proxyUrl,
-                    style = MaterialTheme.typography.bodySmall.copy(
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Cloud, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        "CloudFlare CDN",
+                        style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    imageVector = Icons.Default.ContentCopy,
-                    contentDescription = "Копировать",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Switch(
+                    checked = cfEnabled,
+                    onCheckedChange = {
+                        cfEnabled = it
+                        isDcAuto = it
+                        scheduleSave()
+                    },
+                    enabled = !isRunning
                 )
             }
         }
 
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
     }
 }
 
@@ -486,8 +402,8 @@ private fun PoolChip(
     Button(
         onClick = onClick,
         enabled = enabled,
-        shape = RoundedCornerShape(50),
-        modifier = modifier.height(40.dp),
+        shape = RoundedCornerShape(24.dp),
+        modifier = modifier.height(48.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
             contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
@@ -504,8 +420,20 @@ private fun PoolChip(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IpSetupDialog(
+    isExperimental: Boolean,
+    onExperimentalChange: (Boolean) -> Unit,
+    dc1Text: String, onDc1Change: (String) -> Unit,
     dc2Text: String, onDc2Change: (String) -> Unit,
+    dc3Text: String, onDc3Change: (String) -> Unit,
     dc4Text: String, onDc4Change: (String) -> Unit,
+    dc5Text: String, onDc5Change: (String) -> Unit,
+    dc203Text: String, onDc203Change: (String) -> Unit,
+    dc1mText: String, onDc1mChange: (String) -> Unit,
+    dc2mText: String, onDc2mChange: (String) -> Unit,
+    dc3mText: String, onDc3mChange: (String) -> Unit,
+    dc4mText: String, onDc4mChange: (String) -> Unit,
+    dc5mText: String, onDc5mChange: (String) -> Unit,
+    dc203mText: String, onDc203mChange: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     val onIpChange = { newValue: String, update: (String) -> Unit ->
@@ -522,14 +450,16 @@ private fun IpSetupDialog(
             shape = RoundedCornerShape(24.dp),
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth(0.95f)
+            modifier = Modifier
+                .fillMaxWidth(0.95f)
+                .wrapContentHeight()
+                .heightIn(max = 560.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .padding(24.dp)
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
                     "Адреса датацентров",
@@ -539,6 +469,7 @@ private fun IpSetupDialog(
 
                 @Composable
                 fun dcInput(label: String, value: String, update: (String) -> Unit) {
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
                             label,
                             style = MaterialTheme.typography.bodySmall,
@@ -551,23 +482,66 @@ private fun IpSetupDialog(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(16.dp),
+                            shape = RoundedCornerShape(24.dp),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = MaterialTheme.colorScheme.primary,
                                 unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                             )
                         )
                     }
+                }
 
-                    dcInput("DC2", dc2Text, onDc2Change)
-                    dcInput("DC4", dc4Text, onDc4Change)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (isExperimental) {
+                        dcInput("DC1", dc1Text, onDc1Change)
+                        dcInput("DC2", dc2Text, onDc2Change)
+                        dcInput("DC3", dc3Text, onDc3Change)
+                        dcInput("DC4", dc4Text, onDc4Change)
+                        dcInput("DC5", dc5Text, onDc5Change)
+                        dcInput("DC203", dc203Text, onDc203Change)
 
-                Spacer(Modifier.height(4.dp))
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                        Text("Медиа датацентры", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+
+                        dcInput("DC1m", dc1mText, onDc1mChange)
+                        dcInput("DC2m", dc2mText, onDc2mChange)
+                        dcInput("DC3m", dc3mText, onDc3mChange)
+                        dcInput("DC4m", dc4mText, onDc4mChange)
+                        dcInput("DC5m", dc5mText, onDc5mChange)
+                        dcInput("DC203m", dc203mText, onDc203mChange)
+                    } else {
+                        dcInput("DC2", dc2Text, onDc2Change)
+                        dcInput("DC4", dc4Text, onDc4Change)
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Экспериментальный режим",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Switch(
+                        checked = isExperimental,
+                        onCheckedChange = onExperimentalChange
+                    )
+                }
 
                 Button(
                     onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(16.dp)
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp)
                 ) {
                     Text("Готово", fontWeight = FontWeight.SemiBold)
                 }

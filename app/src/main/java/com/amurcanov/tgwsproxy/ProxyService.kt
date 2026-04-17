@@ -11,20 +11,35 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.net.InetSocketAddress
+import java.net.Socket
 
 class ProxyService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var statsJob: Job? = null
+    private var watchdogJob: Job? = null
+    private var restartJob: Job? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    // Saved intent extras for restart on kill / onTaskRemoved
+    private var lastPort: Int = 1443
+    private var lastIps: String = ""
+    private var lastPoolSize: Int = 4
+    private var lastCfEnabled: Boolean = true
+    private var lastCfPriority: Boolean = true
+    private var lastCfDomain: String = ""
+    private var lastSecretKey: String = ""
 
     companion object {
         const val ACTION_START = "com.amurcanov.tgwsproxy.START"
         const val ACTION_STOP = "com.amurcanov.tgwsproxy.STOP"
+        const val ACTION_RESTART = "com.amurcanov.tgwsproxy.RESTART"
         const val EXTRA_PORT = "EXTRA_PORT"
         const val EXTRA_IPS = "EXTRA_IPS"
         const val EXTRA_POOL_SIZE = "EXTRA_POOL_SIZE"
@@ -33,8 +48,19 @@ class ProxyService : Service() {
         const val EXTRA_CFPROXY_DOMAIN = "EXTRA_CFPROXY_DOMAIN"
         const val EXTRA_SECRET_KEY = "EXTRA_SECRET_KEY"
         
-        private const val NOTIFICATION_ID = 1
-        private const val CHANNEL_ID = "ProxyServiceChannel"
+        private const val NOTIFICATION_ID = 101
+        private const val CHANNEL_ID = "TG_WS_Proxy_Service_v4"
+        private const val TAG = "ProxyService"
+
+        // Wakelock refresh interval (25 min, re-acquire before 30-min timeout)
+        private const val WAKELOCK_TIMEOUT_MS = 30L * 60 * 1000
+        private const val WAKELOCK_REFRESH_MS = 25L * 60 * 1000
+
+        // Stats/notification update interval
+        private const val STATS_UPDATE_MS = 5_000L
+
+        // Startup verification timeout
+        private const val STARTUP_CHECK_DELAY_MS = 3000L
 
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning
@@ -49,7 +75,7 @@ class ProxyService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 LogManager.clearLogs()
-                val port = intent.getIntExtra(EXTRA_PORT, 8080)
+                val port = intent.getIntExtra(EXTRA_PORT, 1443)
                 val ips = intent.getStringExtra(EXTRA_IPS) ?: ""
                 val poolSize = intent.getIntExtra(EXTRA_POOL_SIZE, 4)
                 val cfEnabled = intent.getBooleanExtra(EXTRA_CFPROXY_ENABLED, true)
@@ -61,47 +87,188 @@ class ProxyService : Service() {
             ACTION_STOP -> {
                 stopProxy()
             }
+            ACTION_RESTART -> {
+                restartProxy()
+            }
+            null -> {
+                // Service restarted by system after being killed (START_REDELIVER_INTENT)
+                // If we had saved params, try to restart
+                if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
+                    Log.w(TAG, "Service restarted by system, re-starting proxy")
+                    startProxy(lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey)
+                } else {
+                    stopSelf()
+                }
+            }
         }
-        return START_STICKY
+        // START_REDELIVER_INTENT: if the system kills the service, it will restart it
+        // and re-deliver the last intent, so we don't lose the config.
+        return START_REDELIVER_INTENT
     }
 
     private fun startProxy(port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "") {
         if (_isRunning.value) return
+
+        // Save params for restart
+        lastPort = port
+        lastIps = ips
+        lastPoolSize = poolSize
+        lastCfEnabled = cfEnabled
+        lastCfPriority = cfPriority
+        lastCfDomain = cfDomain
+        lastSecretKey = secretKey
         
         val notification = createNotification("Запуск прокси...")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
 
         acquireWakeLock()
         
+        // Start Go proxy in a separate thread with error handling
         Thread {
-            NativeProxy.setPoolSize(poolSize)
-            NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
-            NativeProxy.setSecret(secretKey)
-            NativeProxy.startProxy("127.0.0.1", port, ips, 1)
+            try {
+                NativeProxy.setPoolSize(poolSize)
+                NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
+                val result = NativeProxy.startProxy("127.0.0.1", port, ips, secretKey, 1)
+                if (result != 0) {
+                    Log.e(TAG, "StartProxy returned error code: $result")
+                    serviceScope.launch {
+                        updateNotification("Ошибка запуска (код: $result)")
+                        delay(3000)
+                        stopProxy()
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to start proxy via JNA", e)
+                serviceScope.launch {
+                    updateNotification("Ошибка: ${e.message}")
+                    delay(3000)
+                    stopProxy()
+                }
+            }
         }.start()
 
         _isRunning.value = true
 
-        statsJob = serviceScope.launch {
-            while (isActive) {
-                delay(2000)
-                if (_isRunning.value) {
-                    val rawStats = NativeProxy.getStats() ?: continue
-                    val upRaw = extractStat(rawStats, "up=")
-                    val downRaw = extractStat(rawStats, "down=")
-                    
-                    val totalBytes = parseHumanBytes(upRaw) + parseHumanBytes(downRaw)
-                    val text = "Трафик: ${formatBytes(totalBytes)}"
-                    val manager = getSystemService(NotificationManager::class.java)
-                    manager?.notify(NOTIFICATION_ID, createNotification(text))
+        // Watchdog: verify the proxy is actually listening after startup
+        watchdogJob = serviceScope.launch {
+            delay(STARTUP_CHECK_DELAY_MS)
+            if (_isRunning.value) {
+                val isListening = withContext(Dispatchers.IO) {
+                    isPortOpen("127.0.0.1", port, 2000)
+                }
+                if (isListening) {
+                    updateNotification("Прокси работает")
+                    Log.i(TAG, "Proxy verified: listening on port $port")
+                } else {
+                    Log.e(TAG, "Proxy NOT listening on port $port after ${STARTUP_CHECK_DELAY_MS}ms")
+                    updateNotification("⚠ Прокси не отвечает")
+                    // Don't stop — it might start slightly later; let the user decide
                 }
             }
+        }
+
+        // Stats updater + notification heartbeat
+        // Frequent notification updates signal the system that the service is "alive"
+        statsJob = serviceScope.launch {
+            // WakeLock refresh sub-job: re-acquire before system timeout
+            launch {
+                while (isActive) {
+                    delay(WAKELOCK_REFRESH_MS)
+                    refreshWakeLock()
+                }
+            }
+
+            while (isActive) {
+                delay(STATS_UPDATE_MS)
+                if (_isRunning.value) {
+                    try {
+                        val rawStats = NativeProxy.getStats() ?: continue
+                        val upRaw = extractStat(rawStats, "up=")
+                        val downRaw = extractStat(rawStats, "down=")
+                        val activeConns = extractStat(rawStats, "active=")
+                        
+                        val totalBytes = parseHumanBytes(upRaw) + parseHumanBytes(downRaw)
+                        val active = activeConns.toIntOrNull() ?: 0
+                        val text = "Трафик: ${formatBytes(totalBytes)} · $active сесс."
+                        updateNotification(text)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Stats update failed", e)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if a TCP port is reachable (used to verify proxy startup)
+     */
+    private fun isPortOpen(host: String, port: Int, timeoutMs: Int): Boolean {
+        return try {
+            Socket().use { socket ->
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+                true
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun updateNotification(content: String) {
+        try {
+            val manager = getSystemService(NotificationManager::class.java)
+            manager?.notify(NOTIFICATION_ID, createNotification(content))
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update notification", e)
+        }
+    }
+
+    private fun restartProxy() {
+        if (restartJob?.isActive == true) return
+        if (lastPort <= 0 || lastSecretKey.isEmpty()) {
+            Log.w(TAG, "Restart requested without saved proxy configuration")
+            return
+        }
+
+        restartJob = serviceScope.launch {
+            Log.i(TAG, "Restarting proxy from notification")
+            updateNotification("Перезапуск прокси...")
+
+            watchdogJob?.cancel()
+            watchdogJob = null
+            statsJob?.cancel()
+            statsJob = null
+
+            withContext(Dispatchers.IO) {
+                try {
+                    NativeProxy.stopProxy()
+                } catch (e: Exception) {
+                    Log.w(TAG, "StopProxy failed during restart", e)
+                }
+            }
+
+            releaseWakeLock()
+            _isRunning.value = false
+            delay(350)
+
+            startProxy(
+                port = lastPort,
+                ips = lastIps,
+                poolSize = lastPoolSize,
+                cfEnabled = lastCfEnabled,
+                cfPriority = lastCfPriority,
+                cfDomain = lastCfDomain,
+                secretKey = lastSecretKey
+            )
         }
     }
 
@@ -132,26 +299,80 @@ class ProxyService : Service() {
     }
 
     private fun stopProxy() {
+        restartJob?.cancel()
+        restartJob = null
+        watchdogJob?.cancel()
+        watchdogJob = null
         statsJob?.cancel()
         statsJob = null
-        Thread { NativeProxy.stopProxy() }.start()
+        Thread {
+            try {
+                NativeProxy.stopProxy()
+            } catch (e: Exception) {
+                Log.w(TAG, "StopProxy failed", e)
+            }
+        }.start()
         releaseWakeLock()
+        _isRunning.value = false
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
+            @Suppress("DEPRECATION")
             stopForeground(true)
         }
         stopSelf()
-        _isRunning.value = false
+    }
+
+    /**
+     * Called when the user swipes the app from recents.
+     * Without this, the service would be killed on many OEM Androids.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        if (_isRunning.value) {
+            Log.w(TAG, "onTaskRemoved: proxy is running, service stays alive")
+            // The service continues because stopWithTask=false in manifest
+            // No action needed — the service keeps running.
+        }
     }
 
     private fun acquireWakeLock() {
-        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
-        wakeLock = powerManager.newWakeLock(
-            PowerManager.PARTIAL_WAKE_LOCK,
-            "TgWsProxy::ServiceWakeLock"
-        )
-        wakeLock?.acquire()
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "TgWsProxy::ServiceWakeLock"
+            ).apply {
+                // Acquire with timeout. System may ignore indefinite wakelocks.
+                acquire(WAKELOCK_TIMEOUT_MS)
+            }
+            Log.d(TAG, "WakeLock acquired (${WAKELOCK_TIMEOUT_MS / 60000}min)")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire WakeLock", e)
+        }
+    }
+
+    /**
+     * Periodically refresh wakelock to prevent system from expiring it.
+     */
+    private fun refreshWakeLock() {
+        try {
+            wakeLock?.let {
+                if (it.isHeld) {
+                    it.release()
+                }
+            }
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "TgWsProxy::ServiceWakeLock"
+            ).apply {
+                acquire(WAKELOCK_TIMEOUT_MS)
+            }
+            Log.d(TAG, "WakeLock refreshed")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to refresh WakeLock", e)
+        }
     }
 
     private fun releaseWakeLock() {
@@ -162,7 +383,7 @@ class ProxyService : Service() {
                 }
             }
         } catch (e: Exception) {
-            // Ignore wakelock exception
+            Log.w(TAG, "Failed to release WakeLock", e)
         }
         wakeLock = null
     }
@@ -173,16 +394,37 @@ class ProxyService : Service() {
                 CHANNEL_ID,
                 "Фоновый Прокси",
                 NotificationManager.IMPORTANCE_LOW
-            )
+            ).apply {
+                description = "Уведомление о работе прокси-сервера"
+                setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
             val manager = getSystemService(NotificationManager::class.java)
             manager?.createNotificationChannel(serviceChannel)
         }
     }
 
     private fun createNotification(content: String): Notification {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            this, 1, openIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val stopIntent = Intent(this, ProxyService::class.java).apply {
             action = ACTION_STOP
         }
+        val restartIntent = Intent(this, ProxyService::class.java).apply {
+            action = ACTION_RESTART
+        }
+        val restartPendingIntent = PendingIntent.getService(
+            this, 2, restartIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val stopPendingIntent = PendingIntent.getService(
             this, 0, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -190,10 +432,17 @@ class ProxyService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Telegram WS Proxy")
             .setContentText(content)
-            .setSmallIcon(R.drawable.ic_notification) // Local pure vector for Android 16 compatibility
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(openPendingIntent) // Tap notification → open app
+            .addAction(android.R.drawable.ic_popup_sync, "Перезапуск", restartPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Отключить", stopPendingIntent)
             .setOngoing(true)
-            .setOnlyAlertOnce(true) // prevent vibrate/sound on updates
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 

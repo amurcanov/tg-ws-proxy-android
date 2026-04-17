@@ -14,6 +14,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -52,15 +53,31 @@ fun FloatingToolbar(
         with(density) { configuration.screenWidthDp.dp.toPx() }
     }
 
-    var offsetY by rememberSaveable { mutableFloatStateOf(screenHeightPx * 0.25f) }
+    var offsetY by rememberSaveable { mutableFloatStateOf(-1f) }
     var isRightSide by rememberSaveable { mutableStateOf(true) }
     var isExpanded by rememberSaveable { mutableStateOf(false) }
+    var tabHeightPx by remember { mutableFloatStateOf(0f) }
+    var panelHeightPx by remember { mutableFloatStateOf(0f) }
 
     val tabWidthDp = 42.dp
     val tabHeightDp = 52.dp
     val panelWidthDp = 220.dp
 
     val tabWidthPx = remember(density) { with(density) { tabWidthDp.toPx() } }
+    val fallbackTabHeightPx = remember(density) { with(density) { tabHeightDp.toPx() } }
+    val edgePaddingPx = remember(density) { with(density) { 8.dp.toPx() } }
+    val safeTopPx = WindowInsets.safeDrawing.getTop(density).toFloat()
+    val safeBottomPx = WindowInsets.safeDrawing.getBottom(density).toFloat()
+    val effectiveTabHeightPx = maxOf(tabHeightPx, fallbackTabHeightPx)
+    val floatingHeightPx = if (isExpanded && panelHeightPx > 0f) {
+        maxOf(effectiveTabHeightPx, panelHeightPx)
+    } else {
+        effectiveTabHeightPx
+    }
+    val minOffsetY = safeTopPx + edgePaddingPx
+    val maxOffsetY = (screenHeightPx - safeBottomPx - floatingHeightPx - edgePaddingPx)
+        .coerceAtLeast(minOffsetY)
+    val defaultOffsetY = (screenHeightPx * 0.24f).coerceIn(minOffsetY, maxOffsetY)
 
     val targetXPx = if (isRightSide) screenWidthPx - tabWidthPx else 0f
 
@@ -70,16 +87,27 @@ fun FloatingToolbar(
         label = "tab_shift"
     )
 
+    LaunchedEffect(minOffsetY, maxOffsetY) {
+        offsetY = if (offsetY < 0f) {
+            defaultOffsetY
+        } else {
+            offsetY.coerceIn(minOffsetY, maxOffsetY)
+        }
+    }
+
     Box(modifier = modifier.fillMaxSize()) {
         Surface(
             onClick = { isExpanded = !isExpanded },
             modifier = Modifier
                 .offset { IntOffset(animatedTabXPx.roundToInt(), offsetY.roundToInt()) }
-                .pointerInput(screenWidthPx, screenHeightPx) {
+                .onGloballyPositioned { coordinates ->
+                    tabHeightPx = coordinates.size.height.toFloat()
+                }
+                .pointerInput(minOffsetY, maxOffsetY) {
                     detectDragGestures(
                         onDrag = { change, dragAmount ->
                             change.consume()
-                            offsetY = (offsetY + dragAmount.y).coerceIn(0f, screenHeightPx * 0.7f)
+                            offsetY = (offsetY + dragAmount.y).coerceIn(minOffsetY, maxOffsetY)
                         }
                     )
                 },
@@ -120,7 +148,10 @@ fun FloatingToolbar(
             }
         ) {
             Surface(
-                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.onGloballyPositioned { coordinates ->
+                    panelHeightPx = coordinates.size.height.toFloat()
+                },
+                shape = RoundedCornerShape(32.dp),
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 8.dp,
                 tonalElevation = 4.dp,
@@ -156,7 +187,7 @@ fun FloatingToolbar(
                         onClick = { onThemeChange("dark"); isExpanded = false }
                     )
 
-                    Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
                     val supportsDynamicColor = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     val showDynamicColorOn = isDynamicColor && supportsDynamicColor
@@ -183,7 +214,7 @@ fun FloatingToolbar(
 
                     AnimatedVisibility(visible = showPalettes) {
                         Column {
-                            Divider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
                             Text(
                                 "Палитра",
                                 style = MaterialTheme.typography.labelSmall,
@@ -216,7 +247,7 @@ private fun ThemeOption(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(24.dp),
         color = if (selected) MaterialTheme.colorScheme.primaryContainer
         else MaterialTheme.colorScheme.surface,
     ) {
