@@ -1,10 +1,19 @@
-# TG WS Proxy Android
+<div align="center">
+  
+  # TG WS Proxy Android
+<img width="256" height="256" alt="play_store_512-round (1)" src="https://github.com/user-attachments/assets/3ff56f8f-6b17-4c76-8f5a-c635cb73cc96" />
 
-Это мобильный форк популярного [TG WS Proxy](https://github.com/Flowseal/tg-ws-proxy) от [Flowseal](https://github.com/Flowseal), переработанный для комфортного использования на современных смартфонах.
+<br>
+  <img src="https://img.shields.io/badge/Android-SDK_24--36-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android SDK">
+  <img src="https://img.shields.io/badge/Go-1.19_--_1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go Version">
+  <img src="https://img.shields.io/badge/Kotlin-Native-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin">
+  <a href="https://github.com/amurcanov/tg-ws-proxy-android/stargazers">
+    <img src="https://img.shields.io/github/stars/amurcanov/tg-ws-proxy-android?style=for-the-badge&logo=github&color=ffca28&labelColor=24292e" alt="Stars">
+  </a>
+</div>
+<br>
 
 **TG WS Proxy Android** — это локальный **MTProto-прокси** для Telegram на Android. Приложение помогает частично обходить блокировки и в ряде сценариев ускоряет работу мессенджера, перенаправляя трафик через защищённые CloudFlare WebSocket-соединения или напрямую к датацентрам Telegram.
-
-* **Краши и проблемы с установкой:** если у вас возникают сбои, вылеты или ошибки при установке, пожалуйста, сохраняйте отчёты и ссылки на них. Также ознакомьтесь с блоком `CAUTION` ниже и поднимайте полноценные `issue` с полезной технической информацией.
 
 ---
 
@@ -67,6 +76,9 @@ Telegram Android → Локальный MTProto (по умолчанию 127.0.0
 6. Нажмите **«Применить в Telegram»** — откроется Telegram-клиент, где останется только подтвердить подключение.
 
 ---
+
+* **Краши и проблемы с установкой:** если у вас возникают сбои, вылеты или ошибки при установке, пожалуйста, сохраняйте отчёты и ссылки на них. Также ознакомьтесь с блоком `NOTE` ниже и поднимайте полноценные `issue` с полезной технической информацией.
+
 
 > [!NOTE]
 > ### Отчёты об ошибках
