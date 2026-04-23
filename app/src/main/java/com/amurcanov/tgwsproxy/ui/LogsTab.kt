@@ -41,8 +41,8 @@ fun LogsTab(settingsStore: SettingsStore) {
     val scope = rememberCoroutineScope()
     val currentLogs by LogManager.logs.collectAsStateWithLifecycle()
 
-    val savedInfo by settingsStore.logShowInfo.collectAsStateWithLifecycle(initialValue = false)
-    val savedError by settingsStore.logShowError.collectAsStateWithLifecycle(initialValue = true)
+    val savedInfo by settingsStore.logShowInfo.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_LOG_SHOW_INFO)
+    val savedError by settingsStore.logShowError.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_LOG_SHOW_ERROR)
     val savedNull by settingsStore.logShowNull.collectAsStateWithLifecycle(initialValue = false)
 
     val filteredLogs = remember(currentLogs, savedInfo, savedError, savedNull) {
@@ -81,7 +81,7 @@ fun LogsTab(settingsStore: SettingsStore) {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

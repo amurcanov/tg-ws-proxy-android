@@ -25,6 +25,11 @@ class ProxyService : Service() {
     private var statsJob: Job? = null
     private var watchdogJob: Job? = null
     private var restartJob: Job? = null
+    private var lastNotificationContent: String = ""
+    private var lastNotificationAtMs: Long = 0L
+    private var notificationStartedAtMs: Long = 0L
+    @Volatile
+    private var stopInProgress = false
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Saved intent extras for restart on kill / onTaskRemoved
@@ -57,7 +62,9 @@ class ProxyService : Service() {
         private const val WAKELOCK_REFRESH_MS = 25L * 60 * 1000
 
         // Stats/notification update interval
-        private const val STATS_UPDATE_MS = 5_000L
+        private const val STATS_UPDATE_MS = 3_000L
+        private const val NOTIFICATION_MIN_UPDATE_MS = 3_000L
+        private const val NATIVE_STOP_WAIT_MS = 3_000L
 
         // Startup verification timeout
         private const val STARTUP_CHECK_DELAY_MS = 3000L
@@ -109,7 +116,7 @@ class ProxyService : Service() {
     private fun startProxy(port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "") {
-        if (_isRunning.value) return
+        if (_isRunning.value || stopInProgress) return
 
         // Save params for restart
         lastPort = port
@@ -119,30 +126,35 @@ class ProxyService : Service() {
         lastCfPriority = cfPriority
         lastCfDomain = cfDomain
         lastSecretKey = secretKey
-        
-        val notification = createNotification("Запуск прокси...")
+        notificationStartedAtMs = System.currentTimeMillis()
+        lastNotificationContent = "Запуск прокси..."
+        lastNotificationAtMs = notificationStartedAtMs
+
+        val notification = createNotification(lastNotificationContent)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
 
         acquireWakeLock()
+        stopInProgress = false
         
         // Start Go proxy in a separate thread with error handling
-        Thread {
+        Thread({
             try {
                 NativeProxy.setPoolSize(poolSize)
+                NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
                 val result = NativeProxy.startProxy("127.0.0.1", port, ips, secretKey, 1)
                 if (result != 0) {
                     Log.e(TAG, "StartProxy returned error code: $result")
                     serviceScope.launch {
-                        updateNotification("Ошибка запуска (код: $result)")
+                        updateNotification("Ошибка запуска (код: $result)", force = true)
                         delay(3000)
                         stopProxy()
                     }
@@ -150,14 +162,17 @@ class ProxyService : Service() {
             } catch (e: Throwable) {
                 Log.e(TAG, "Failed to start proxy via JNA", e)
                 serviceScope.launch {
-                    updateNotification("Ошибка: ${e.message}")
+                    updateNotification("Ошибка: ${e.message}", force = true)
                     delay(3000)
                     stopProxy()
                 }
             }
-        }.start()
+        }, "ProxyStart").apply {
+            isDaemon = true
+            start()
+        }
 
-        _isRunning.value = true
+        updateRunningState(true)
 
         // Watchdog: verify the proxy is actually listening after startup
         watchdogJob = serviceScope.launch {
@@ -167,18 +182,18 @@ class ProxyService : Service() {
                     isPortOpen("127.0.0.1", port, 2000)
                 }
                 if (isListening) {
-                    updateNotification("Прокси работает")
+                    updateNotification("Прокси работает", force = true)
                     Log.i(TAG, "Proxy verified: listening on port $port")
                 } else {
                     Log.e(TAG, "Proxy NOT listening on port $port after ${STARTUP_CHECK_DELAY_MS}ms")
-                    updateNotification("⚠ Прокси не отвечает")
+                    updateNotification("⚠ Прокси не отвечает", force = true)
                     // Don't stop — it might start slightly later; let the user decide
                 }
             }
         }
 
-        // Stats updater + notification heartbeat
-        // Frequent notification updates signal the system that the service is "alive"
+        // Stats updater. Notification updates are throttled so the system keeps
+        // a stable foreground entry instead of constantly reordering it.
         statsJob = serviceScope.launch {
             // WakeLock refresh sub-job: re-acquire before system timeout
             launch {
@@ -190,7 +205,7 @@ class ProxyService : Service() {
 
             while (isActive) {
                 delay(STATS_UPDATE_MS)
-                if (_isRunning.value) {
+                if (_isRunning.value && !stopInProgress) {
                     try {
                         val rawStats = NativeProxy.getStats() ?: continue
                         val upRaw = extractStat(rawStats, "up=")
@@ -223,7 +238,15 @@ class ProxyService : Service() {
         }
     }
 
-    private fun updateNotification(content: String) {
+    private fun updateNotification(content: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force) {
+            if (content == lastNotificationContent) return
+            if (lastNotificationAtMs != 0L && now - lastNotificationAtMs < NOTIFICATION_MIN_UPDATE_MS) return
+        }
+
+        lastNotificationContent = content
+        lastNotificationAtMs = now
         try {
             val manager = getSystemService(NotificationManager::class.java)
             manager?.notify(NOTIFICATION_ID, createNotification(content))
@@ -241,23 +264,16 @@ class ProxyService : Service() {
 
         restartJob = serviceScope.launch {
             Log.i(TAG, "Restarting proxy from notification")
-            updateNotification("Перезапуск прокси...")
+            updateNotification("Перезапуск прокси...", force = true)
 
             watchdogJob?.cancel()
             watchdogJob = null
             statsJob?.cancel()
             statsJob = null
 
-            withContext(Dispatchers.IO) {
-                try {
-                    NativeProxy.stopProxy()
-                } catch (e: Exception) {
-                    Log.w(TAG, "StopProxy failed during restart", e)
-                }
-            }
-
+            requestNativeStop("restart")
             releaseWakeLock()
-            _isRunning.value = false
+            updateRunningState(false)
             delay(350)
 
             startProxy(
@@ -299,28 +315,53 @@ class ProxyService : Service() {
     }
 
     private fun stopProxy() {
+        if (stopInProgress) return
+        stopInProgress = true
         restartJob?.cancel()
         restartJob = null
         watchdogJob?.cancel()
         watchdogJob = null
         statsJob?.cancel()
         statsJob = null
-        Thread {
+        serviceScope.launch {
+            updateNotification("Остановка прокси...", force = true)
+            requestNativeStop("stop")
+            releaseWakeLock()
+            updateRunningState(false)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf()
+        }
+    }
+
+    private suspend fun requestNativeStop(reason: String): Boolean {
+        val completed = CompletableDeferred<Unit>()
+        Thread({
             try {
                 NativeProxy.stopProxy()
             } catch (e: Exception) {
-                Log.w(TAG, "StopProxy failed", e)
+                Log.w(TAG, "StopProxy failed during $reason", e)
+            } finally {
+                completed.complete(Unit)
             }
-        }.start()
-        releaseWakeLock()
-        _isRunning.value = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
+        }, "ProxyStop-$reason").apply {
+            isDaemon = true
+            start()
         }
-        stopSelf()
+
+        val finished = withTimeoutOrNull(NATIVE_STOP_WAIT_MS) {
+            completed.await()
+            true
+        } ?: false
+
+        if (!finished) {
+            Log.w(TAG, "Native stop is still running after ${NATIVE_STOP_WAIT_MS}ms during $reason")
+        }
+        return finished
     }
 
     /**
@@ -388,6 +429,11 @@ class ProxyService : Service() {
         wakeLock = null
     }
 
+    private fun updateRunningState(isRunning: Boolean) {
+        _isRunning.value = isRunning
+        ProxyTileService.requestSync(this)
+    }
+
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val serviceChannel = NotificationChannel(
@@ -442,15 +488,24 @@ class ProxyService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setWhen(notificationStartedAtMs.takeIf { it > 0L } ?: System.currentTimeMillis())
+            .setShowWhen(false)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
 
     override fun onDestroy() {
-        serviceScope.cancel()
+        restartJob?.cancel()
+        restartJob = null
+        watchdogJob?.cancel()
+        watchdogJob = null
+        statsJob?.cancel()
+        statsJob = null
+        releaseWakeLock()
         if (_isRunning.value) {
-            stopProxy()
+            updateRunningState(false)
         }
+        serviceScope.cancel()
         super.onDestroy()
     }
 

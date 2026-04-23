@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VpnKey
@@ -96,9 +97,9 @@ fun SettingsTab(settingsStore: SettingsStore) {
 
     val savedIsDcAuto by settingsStore.isDcAuto.collectAsStateWithLifecycle(initialValue = true)
     val savedDc1 by settingsStore.dc1.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc2 by settingsStore.dc2.collectAsStateWithLifecycle(initialValue = "149.154.167.220")
+    val savedDc2 by settingsStore.dc2.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_DIRECT_DC2_IP)
     val savedDc3 by settingsStore.dc3.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc4 by settingsStore.dc4.collectAsStateWithLifecycle(initialValue = "149.154.167.220")
+    val savedDc4 by settingsStore.dc4.collectAsStateWithLifecycle(initialValue = SettingsStore.DEFAULT_DIRECT_DC4_IP)
     val savedDc5 by settingsStore.dc5.collectAsStateWithLifecycle(initialValue = "")
     val savedDc203 by settingsStore.dc203.collectAsStateWithLifecycle(initialValue = "")
     val savedDc1m by settingsStore.dc1m.collectAsStateWithLifecycle(initialValue = "")
@@ -112,6 +113,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
+    val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
 
     if (!isReady) {
@@ -128,9 +130,9 @@ fun SettingsTab(settingsStore: SettingsStore) {
     var isDcAuto by rememberSaveable(savedIsDcAuto) { mutableStateOf(savedIsDcAuto) }
     var experimentalMode by rememberSaveable(isExperimental) { mutableStateOf(isExperimental) }
     var dc1Text by rememberSaveable(savedDc1) { mutableStateOf(savedDc1) }
-    var dc2Text by rememberSaveable(savedDc2) { mutableStateOf(if(savedDc2.isEmpty()) "149.154.167.220" else savedDc2) }
+    var dc2Text by rememberSaveable(savedDc2) { mutableStateOf(savedDc2) }
     var dc3Text by rememberSaveable(savedDc3) { mutableStateOf(savedDc3) }
-    var dc4Text by rememberSaveable(savedDc4) { mutableStateOf(if(savedDc4.isEmpty()) "149.154.167.220" else savedDc4) }
+    var dc4Text by rememberSaveable(savedDc4) { mutableStateOf(savedDc4) }
     var dc5Text by rememberSaveable(savedDc5) { mutableStateOf(savedDc5) }
     var dc203Text by rememberSaveable(savedDc203) { mutableStateOf(savedDc203) }
     var dc1mText by rememberSaveable(savedDc1m) { mutableStateOf(savedDc1m) }
@@ -199,7 +201,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 12.dp)
     ) {
         Row(
             modifier = Modifier
@@ -383,6 +385,38 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         scheduleSave()
                     },
                     enabled = !isRunning
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.PowerSettingsNew, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Text(
+                        "Автозапуск",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Switch(
+                    checked = autoStartOnBoot,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveAutoStartOnBoot(enabled) }
+                    }
                 )
             }
         }

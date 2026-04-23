@@ -1,7 +1,6 @@
 package com.amurcanov.tgwsproxy.ui
 
 import android.content.Context
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
@@ -27,9 +26,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.amurcanov.tgwsproxy.BuildConfig
+import com.amurcanov.tgwsproxy.ProxyController
 import com.amurcanov.tgwsproxy.ProxyService
 import com.amurcanov.tgwsproxy.SettingsStore
 import com.amurcanov.tgwsproxy.R
@@ -42,30 +41,12 @@ fun ConnectionTab(settingsStore: SettingsStore) {
     val isRunning by ProxyService.isRunning.collectAsStateWithLifecycle()
 
     val isReady by settingsStore.isReady.collectAsStateWithLifecycle(initialValue = false)
-    val isExperimental by settingsStore.isExperimentalMode.collectAsStateWithLifecycle(initialValue = false)
 
     // Settings
     val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
-    val savedIsDcAuto by settingsStore.isDcAuto.collectAsStateWithLifecycle(initialValue = true)
-    
-    val savedDc1 by settingsStore.dc1.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc2 by settingsStore.dc2.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc3 by settingsStore.dc3.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc4 by settingsStore.dc4.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc5 by settingsStore.dc5.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc203 by settingsStore.dc203.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc1m by settingsStore.dc1m.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc2m by settingsStore.dc2m.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc3m by settingsStore.dc3m.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc4m by settingsStore.dc4m.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc5m by settingsStore.dc5m.collectAsStateWithLifecycle(initialValue = "")
-    val savedDc203m by settingsStore.dc203m.collectAsStateWithLifecycle(initialValue = "")
-
-    val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
-    val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
 
     val scope = rememberCoroutineScope()
     val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
@@ -118,58 +99,21 @@ fun ConnectionTab(settingsStore: SettingsStore) {
     val connectAction = {
         if (!isRunning && !isStarting) {
             isStarting = true
-            val portVal = savedPort.toIntOrNull()
-            if (portVal == null) {
-                Toast.makeText(context, "Неверный порт", Toast.LENGTH_SHORT).show()
-                isStarting = false
-            } else {
-                val parsedIps = buildList {
-                    if (!savedIsDcAuto) {
-                        if (savedDc1.isNotBlank()) add("1:${savedDc1.trim()}")
-                        if (savedDc2.isNotBlank()) add("2:${savedDc2.trim()}")
-                        if (savedDc3.isNotBlank()) add("3:${savedDc3.trim()}")
-                        if (savedDc4.isNotBlank()) add("4:${savedDc4.trim()}")
-
-                        if (isExperimental) {
-                            if (savedDc5.isNotBlank()) add("5:${savedDc5.trim()}")
-                            if (savedDc203.isNotBlank()) add("203:${savedDc203.trim()}")
-                            if (savedDc1m.isNotBlank()) add("-1:${savedDc1m.trim()}")
-                            if (savedDc2m.isNotBlank()) add("-2:${savedDc2m.trim()}")
-                            if (savedDc3m.isNotBlank()) add("-3:${savedDc3m.trim()}")
-                            if (savedDc4m.isNotBlank()) add("-4:${savedDc4m.trim()}")
-                            if (savedDc5m.isNotBlank()) add("-5:${savedDc5m.trim()}")
-                            if (savedDc203m.isNotBlank()) add("-203:${savedDc203m.trim()}")
-                        }
-                    }
-                }.joinToString(",")
-
-                ContextCompat.startForegroundService(
-                    context,
-                    Intent(context, ProxyService::class.java).apply {
-                        action = ProxyService.ACTION_START
-                        putExtra(ProxyService.EXTRA_PORT, portVal)
-                        putExtra(ProxyService.EXTRA_IPS, parsedIps)
-                        putExtra(ProxyService.EXTRA_POOL_SIZE, savedPoolSize)
-                        putExtra(ProxyService.EXTRA_CFPROXY_ENABLED, savedCfEnabled)
-                        putExtra(ProxyService.EXTRA_CFPROXY_PRIORITY, true)
-                        putExtra(
-                            ProxyService.EXTRA_CFPROXY_DOMAIN,
-                            if (savedCustomDomainEnabled && savedCfEnabled) savedCustomDomain.trim() else ""
-                        )
-                        putExtra(ProxyService.EXTRA_SECRET_KEY, secretForUrl)
-                    }
+            scope.launch {
+                val started = ProxyController.startFromSavedSettings(
+                    context = context,
+                    showInvalidPortToast = true
                 )
+                if (!started) {
+                    isStarting = false
+                }
             }
         }
     }
 
     val disconnectAction = {
         if (isRunning || isStarting) {
-            context.startService(
-                Intent(context, ProxyService::class.java).apply {
-                    action = ProxyService.ACTION_STOP
-                }
-            )
+            ProxyController.stop(context)
         }
     }
 
@@ -193,7 +137,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 20.dp)
-            .padding(top = 12.dp, bottom = 16.dp)
+            .padding(top = 0.dp, bottom = 16.dp)
     ) {
         Row(
             modifier = Modifier

@@ -1,5 +1,6 @@
 package com.amurcanov.tgwsproxy.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -18,10 +19,24 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 private fun appSectionCardColor(): Color {
-    val surface = MaterialTheme.colorScheme.surface
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
-    val blend = if (surface.luminance() > 0.5f) 0.28f else 0.16f
-    return lerp(surface, surfaceVariant, blend)
+    val colors = MaterialTheme.colorScheme
+    val isDark = colors.background.luminance() < 0.22f
+    return if (isDark) {
+        lerp(colors.surface, colors.primaryContainer, 0.20f)
+    } else {
+        lerp(colors.surface, colors.surfaceVariant, 0.28f)
+    }
+}
+
+@Composable
+private fun appSectionCardBorderColor(): Color {
+    val colors = MaterialTheme.colorScheme
+    val isDark = colors.background.luminance() < 0.22f
+    return if (isDark) {
+        colors.outlineVariant.copy(alpha = 0.52f)
+    } else {
+        colors.outlineVariant.copy(alpha = 0.24f)
+    }
 }
 
 @Composable
@@ -34,8 +49,9 @@ fun AppSectionCard(
     Surface(
         shape = RoundedCornerShape(28.dp),
         color = appSectionCardColor(),
+        border = BorderStroke(1.dp, appSectionCardBorderColor()),
         shadowElevation = 10.dp,
-        tonalElevation = 1.dp,
+        tonalElevation = 2.dp,
         modifier = modifier.fillMaxWidth()
     ) {
         Column(

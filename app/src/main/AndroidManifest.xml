@@ -5,7 +5,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
@@ -18,17 +17,30 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="Telegram WS Proxy"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.NoTitleBar"
+        android:theme="@style/Theme.WDTTClient"
         tools:targetApi="33">
         
         <activity
             android:name="com.amurcanov.tgwsproxy.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize"
-            android:theme="@android:style/Theme.NoTitleBar">
+            android:theme="@style/Theme.WDTTClient">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name="com.amurcanov.tgwsproxy.ProxyTilePreferencesActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
@@ -36,8 +48,19 @@
             android:name="com.amurcanov.tgwsproxy.ProxyService"
             android:exported="false"
             android:stopWithTask="false"
-            android:foregroundServiceType="dataSync|specialUse">
+            android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Proxy Server" />
+        </service>
+
+        <service
+            android:name="com.amurcanov.tgwsproxy.ProxyTileService"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_proxy_t"
+            android:label="Telegram WS Proxy">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
         </service>
 
         <!-- Restart proxy after device reboot if it was running -->

@@ -23,7 +23,6 @@ import (
 	"crypto/cipher"
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -39,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -60,7 +60,7 @@ const (
 	defaultSendBuf = 256 * 1024
 	defaultPoolSz  = 4
 
-	wsPoolMaxAge = 20.0
+	wsPoolMaxAge = 120.0
 
 	dcFailCooldown = 10.0
 
@@ -77,6 +77,17 @@ const (
 	wsPoolProbeAfter   = 8.0
 	wsBridgeChunkSize  = 64 * 1024
 	pooledFrameCap     = wsBridgeChunkSize + 32
+
+	wsPoolReuseMaxAge = 30.0
+
+	cfproxyCacheFileName    = "cfproxy-domains-cache.txt"
+	cfproxyActiveFileName   = "cfproxy-active-domain.txt"
+	cfproxyRefreshInterval  = 12 * time.Hour
+	cfproxyDialPhaseTimeout = 4 * time.Second
+	cfproxyFallbackParallel = 2
+	cfproxy429Cooldown      = 45 * time.Second
+	cfproxy429MaxCooldown   = 5 * time.Minute
+	cfproxyGlobalParallel   = 4
 )
 
 var (
@@ -86,17 +97,26 @@ var (
 	logVerbose = false
 )
 
+type cfproxy429State struct {
+	until   time.Time
+	strikes int
+}
+
 func init() {
 	poolSize.Store(defaultPoolSz)
 }
 
 // Cloudflare proxy config
 var (
-	cfproxyEnabled    = true
-	cfproxyUserDomain = ""
-	cfproxyDomains    []string
-	activeCfDomain    string
-	cfproxyMu         sync.RWMutex
+	cfproxyEnabled          = true
+	cfproxyUserDomain       = ""
+	cfproxyDomains          []string
+	activeCfDomain          string
+	cfproxyCacheDir         = ""
+	cfproxyMu               sync.RWMutex
+	cfproxy429StateByDomain = make(map[string]cfproxy429State)
+	cfproxy429Mu            sync.RWMutex
+	cfproxyAttemptSem       = make(chan struct{}, cfproxyGlobalParallel)
 )
 
 const cfproxyDomainsURL = "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/main/.github/cfproxy-domains.txt"
@@ -152,6 +172,25 @@ var dcDefaultIPs = map[int]string{
 	4:   "149.154.167.91",
 	5:   "149.154.171.5",
 	203: "91.105.192.100",
+}
+
+func resolveConfiguredTarget(dc int, isMedia bool) (string, bool) {
+	dcOptMu.RLock()
+	defer dcOptMu.RUnlock()
+
+	if isMedia {
+		if target, ok := dcOpt[-dc]; ok && target != "" {
+			return target, true
+		}
+	}
+	if target, ok := dcOpt[dc]; ok && target != "" {
+		return target, true
+	}
+	return "", false
+}
+
+func resolveFallbackTarget(dc int, isMedia bool) string {
+	return dcDefaultIPs[dc]
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +260,289 @@ func decodeCfDomain(s string) string {
 	return string(result) + suffix
 }
 
+func normalizeCfDomain(s string) string {
+	decoded := strings.ToLower(strings.TrimSpace(decodeCfDomain(s)))
+	decoded = strings.TrimSuffix(decoded, ".")
+	if decoded == "" || !strings.HasSuffix(decoded, ".co.uk") {
+		return ""
+	}
+	return decoded
+}
+
+func defaultCfproxyDomains() []string {
+	domains := make([]string, 0, len(cfproxyEnc))
+	for _, enc := range cfproxyEnc {
+		if domain := normalizeCfDomain(enc); domain != "" {
+			domains = append(domains, domain)
+		}
+	}
+	return domains
+}
+
+func mergeCfproxyDomains(lists ...[]string) []string {
+	seen := make(map[string]struct{})
+	merged := make([]string, 0)
+	for _, list := range lists {
+		for _, raw := range list {
+			domain := normalizeCfDomain(raw)
+			if domain == "" {
+				continue
+			}
+			if _, ok := seen[domain]; ok {
+				continue
+			}
+			seen[domain] = struct{}{}
+			merged = append(merged, domain)
+		}
+	}
+	return merged
+}
+
+func clearCfproxy429Cooldowns() {
+	cfproxy429Mu.Lock()
+	cfproxy429StateByDomain = make(map[string]cfproxy429State)
+	cfproxy429Mu.Unlock()
+}
+
+func clearCfproxy429Cooldown(domain string) {
+	domain = normalizeCfDomain(domain)
+	if domain == "" {
+		return
+	}
+
+	cfproxy429Mu.Lock()
+	delete(cfproxy429StateByDomain, domain)
+	cfproxy429Mu.Unlock()
+}
+
+func retryAfterDelay(err error) time.Duration {
+	var wsErr *WsHandshakeError
+	if !errors.As(err, &wsErr) || wsErr == nil {
+		return 0
+	}
+
+	retryAfter := strings.TrimSpace(wsErr.Headers["retry-after"])
+	if retryAfter == "" {
+		return 0
+	}
+
+	if seconds, convErr := strconv.Atoi(retryAfter); convErr == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+
+	if when, convErr := http.ParseTime(retryAfter); convErr == nil {
+		if delay := time.Until(when); delay > 0 {
+			return delay
+		}
+	}
+
+	return 0
+}
+
+func nextCfproxy429CooldownDelay(prev cfproxy429State, retryAfter time.Duration) time.Duration {
+	if retryAfter > 0 {
+		if retryAfter > cfproxy429MaxCooldown {
+			return cfproxy429MaxCooldown
+		}
+		return retryAfter
+	}
+
+	strikes := prev.strikes
+	if prev.until.IsZero() || time.Since(prev.until) > cfproxy429MaxCooldown {
+		strikes = 0
+	}
+
+	delay := cfproxy429Cooldown
+	for i := 0; i < strikes; i++ {
+		delay *= 2
+		if delay >= cfproxy429MaxCooldown {
+			return cfproxy429MaxCooldown
+		}
+	}
+
+	if delay > cfproxy429MaxCooldown {
+		return cfproxy429MaxCooldown
+	}
+	return delay
+}
+
+func markCfproxy429Cooldown(domain string, err error) {
+	domain = normalizeCfDomain(domain)
+	if domain == "" {
+		return
+	}
+
+	retryAfter := retryAfterDelay(err)
+	cfproxy429Mu.Lock()
+	prev := cfproxy429StateByDomain[domain]
+	delay := nextCfproxy429CooldownDelay(prev, retryAfter)
+	strikes := prev.strikes + 1
+	if prev.until.IsZero() || time.Since(prev.until) > cfproxy429MaxCooldown {
+		strikes = 1
+	}
+	cfproxy429StateByDomain[domain] = cfproxy429State{
+		until:   time.Now().Add(delay),
+		strikes: strikes,
+	}
+	cfproxy429Mu.Unlock()
+
+	logDebug.Printf(" CF cooldown %s: %.0fs after 429", domain, math.Ceil(delay.Seconds()))
+}
+
+func cfproxy429CooldownRemaining(domain string) time.Duration {
+	domain = normalizeCfDomain(domain)
+	if domain == "" {
+		return 0
+	}
+
+	cfproxy429Mu.RLock()
+	state, ok := cfproxy429StateByDomain[domain]
+	cfproxy429Mu.RUnlock()
+	if !ok {
+		return 0
+	}
+
+	remaining := time.Until(state.until)
+	if remaining <= 0 {
+		cfproxy429Mu.Lock()
+		delete(cfproxy429StateByDomain, domain)
+		cfproxy429Mu.Unlock()
+		return 0
+	}
+	return remaining
+}
+
+func acquireCfproxyAttemptSlot(ctx context.Context) bool {
+	select {
+	case cfproxyAttemptSem <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func releaseCfproxyAttemptSlot() {
+	select {
+	case <-cfproxyAttemptSem:
+	default:
+	}
+}
+
+func cfproxyCachePath() string {
+	cfproxyMu.RLock()
+	cacheDir := strings.TrimSpace(cfproxyCacheDir)
+	cfproxyMu.RUnlock()
+	if cacheDir == "" {
+		return ""
+	}
+	return filepath.Join(cacheDir, cfproxyCacheFileName)
+}
+
+func cfproxyActiveDomainPath() string {
+	cfproxyMu.RLock()
+	cacheDir := strings.TrimSpace(cfproxyCacheDir)
+	cfproxyMu.RUnlock()
+	if cacheDir == "" {
+		return ""
+	}
+	return filepath.Join(cacheDir, cfproxyActiveFileName)
+}
+
+func loadCfproxyDomainsFromCache() []string {
+	cachePath := cfproxyCachePath()
+	if cachePath == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return nil
+	}
+
+	return mergeCfproxyDomains(strings.Split(string(data), "\n"))
+}
+
+func loadActiveCfproxyDomain() string {
+	activePath := cfproxyActiveDomainPath()
+	if activePath == "" {
+		return ""
+	}
+
+	data, err := os.ReadFile(activePath)
+	if err != nil {
+		return ""
+	}
+	return normalizeCfDomain(string(data))
+}
+
+func saveCfproxyDomainsToCache(domains []string) {
+	cachePath := cfproxyCachePath()
+	if cachePath == "" || len(domains) == 0 {
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		logDebug.Printf(" CF: кеш создать не удалось: %s", err)
+		return
+	}
+
+	data := strings.Join(domains, "\n")
+	if err := os.WriteFile(cachePath, []byte(data), 0o644); err != nil {
+		logDebug.Printf(" CF: кеш сохранить не удалось: %s", err)
+	}
+}
+
+func saveActiveCfproxyDomain(domain string) {
+	activePath := cfproxyActiveDomainPath()
+	domain = normalizeCfDomain(domain)
+	if activePath == "" || domain == "" {
+		return
+	}
+
+	if err := os.MkdirAll(filepath.Dir(activePath), 0o755); err != nil {
+		logDebug.Printf(" CF: active-domain кеш создать не удалось: %s", err)
+		return
+	}
+
+	if err := os.WriteFile(activePath, []byte(domain), 0o644); err != nil {
+		logDebug.Printf(" CF: active-domain кеш сохранить не удалось: %s", err)
+	}
+}
+
+func shouldRefreshCfproxyDomains() bool {
+	cachePath := cfproxyCachePath()
+	if cachePath == "" {
+		return true
+	}
+
+	info, err := os.Stat(cachePath)
+	if err != nil {
+		return true
+	}
+
+	return time.Since(info.ModTime()) >= cfproxyRefreshInterval
+}
+
+func setActiveCfproxyDomainLocked(preferred string) {
+	if len(cfproxyDomains) == 0 {
+		activeCfDomain = ""
+		return
+	}
+	preferred = normalizeCfDomain(preferred)
+	for _, domain := range cfproxyDomains {
+		if domain == preferred {
+			activeCfDomain = domain
+			return
+		}
+	}
+	activeCfDomain = cfproxyDomains[0]
+}
+
 func initCfproxyDomains() {
+	defaults := defaultCfproxyDomains()
+	cached := loadCfproxyDomainsFromCache()
+	persistedActive := loadActiveCfproxyDomain()
+
 	cfproxyMu.Lock()
 	defer cfproxyMu.Unlock()
 	if cfproxyUserDomain != "" {
@@ -229,16 +550,22 @@ func initCfproxyDomains() {
 		activeCfDomain = cfproxyUserDomain
 		return
 	}
-	cfproxyDomains = make([]string, len(cfproxyEnc))
-	for i, enc := range cfproxyEnc {
-		cfproxyDomains[i] = decodeCfDomain(enc)
+
+	if len(cached) > 0 {
+		cfproxyDomains = mergeCfproxyDomains(cached, defaults)
+		logInfo.Printf(" CF: кеш доменов загружен (%d шт.)", len(cached))
+	} else {
+		cfproxyDomains = defaults
 	}
-	if len(cfproxyDomains) > 0 {
-		activeCfDomain = cfproxyDomains[0]
-	}
+	setActiveCfproxyDomainLocked(persistedActive)
 }
 
 func startCfproxyRefresh(ctx context.Context) {
+	if !shouldRefreshCfproxyDomains() {
+		logDebug.Printf(" CF: кеш свежий, пропускаю обновление списка")
+		return
+	}
+
 	go func() {
 		for i := 0; i < 3; i++ {
 			if tryRefreshCfproxyDomains(ctx) {
@@ -251,6 +578,7 @@ func startCfproxyRefresh(ctx context.Context) {
 				continue
 			}
 		}
+		logDebug.Printf(" CF: обновить список доменов не удалось, остаюсь на кеше/встроенном списке")
 	}()
 }
 
@@ -262,8 +590,7 @@ func tryRefreshCfproxyDomains(ctx context.Context) bool {
 		return true
 	}
 
-	url := fmt.Sprintf("%s?v=%d", cfproxyDomainsURL, time.Now().Unix())
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", cfproxyDomainsURL, nil)
 	if err != nil {
 		return false
 	}
@@ -271,10 +598,12 @@ func tryRefreshCfproxyDomains(ctx context.Context) bool {
 
 	resp, err := githubClient.Do(req)
 	if err != nil {
+		logDebug.Printf(" CF: GitHub недоступен: %s", err)
 		return false
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
+		logDebug.Printf(" CF: GitHub вернул %d", resp.StatusCode)
 		return false
 	}
 
@@ -285,26 +614,28 @@ func tryRefreshCfproxyDomains(ctx context.Context) bool {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		decoded := decodeCfDomain(line)
-		if strings.HasSuffix(decoded, ".uk") {
-			newDomains = append(newDomains, decoded)
+		if domain := normalizeCfDomain(line); domain != "" {
+			newDomains = append(newDomains, domain)
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		logDebug.Printf(" CF: список доменов прочитать не удалось: %s", err)
+		return false
 	}
 
 	if len(newDomains) > 0 {
+		merged := mergeCfproxyDomains(newDomains, defaultCfproxyDomains())
 		cfproxyMu.Lock()
 		if cfproxyUserDomain != "" {
 			cfproxyMu.Unlock()
 			return true
 		}
-		cfproxyDomains = newDomains
-		idx := 0
-		rb := make([]byte, 1)
-		if _, err := rand.Read(rb); err == nil {
-			idx = int(rb[0]) % len(newDomains)
-		}
-		activeCfDomain = newDomains[idx]
+		currentActive := activeCfDomain
+		cfproxyDomains = merged
+		setActiveCfproxyDomainLocked(currentActive)
 		cfproxyMu.Unlock()
+
+		saveCfproxyDomainsToCache(merged)
 		logInfo.Printf(" CF: список доменов обновлен (%d шт.)", len(newDomains))
 		return true
 	}
@@ -432,13 +763,8 @@ func setSockOpts(conn net.Conn) {
 		}
 		_ = tc.SetKeepAlive(true)
 		_ = tc.SetKeepAlivePeriod(30 * time.Second)
-		raw, err := tc.SyscallConn()
-		if err == nil {
-			_ = raw.Control(func(fd uintptr) {
-				_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_RCVBUF, recvBuf)
-				_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_SNDBUF, sendBuf)
-			})
-		}
+		_ = tc.SetReadBuffer(recvBuf)
+		_ = tc.SetWriteBuffer(sendBuf)
 	}
 }
 
@@ -512,13 +838,6 @@ func (e *WsHandshakeError) IsRedirect() bool {
 	return false
 }
 
-const wsAcceptGUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
-
-func expectedWebSocketAccept(key string) string {
-	sum := sha1.Sum([]byte(key + wsAcceptGUID))
-	return base64.StdEncoding.EncodeToString(sum[:])
-}
-
 type RawWebSocket struct {
 	conn      net.Conn
 	bufReader *bufio.Reader
@@ -531,6 +850,23 @@ type dohResponse struct {
 		Data string `json:"data"`
 		Type int    `json:"type"`
 	} `json:"Answer"`
+}
+
+func pickPreferredIP(candidates []string) string {
+	var fallbackV6 string
+	for _, candidate := range candidates {
+		ip := net.ParseIP(strings.TrimSpace(candidate))
+		if ip == nil {
+			continue
+		}
+		if ip4 := ip.To4(); ip4 != nil {
+			return ip4.String()
+		}
+		if fallbackV6 == "" {
+			fallbackV6 = ip.String()
+		}
+	}
+	return fallbackV6
 }
 
 func resolveDoH(ctx context.Context, domain string) string {
@@ -556,9 +892,9 @@ func resolveDoH(ctx context.Context, domain string) string {
 				},
 			}
 			ips, err := r.LookupHost(dnsCtx, domain)
-			if err == nil && len(ips) > 0 {
+			if preferred := pickPreferredIP(ips); err == nil && preferred != "" {
 				select {
-				case resCh <- ips[0]:
+				case resCh <- preferred:
 				default:
 				}
 			}
@@ -641,6 +977,20 @@ func contextRemainingTimeout(ctx context.Context, fallback time.Duration) time.D
 	return fallback
 }
 
+func newTimedAttemptContext(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc, time.Duration) {
+	effective := timeout
+	if effective <= 0 {
+		effective = 5 * time.Second
+	}
+	if deadline, ok := parent.Deadline(); ok {
+		if remaining := time.Until(deadline); remaining > 0 && remaining < effective {
+			effective = remaining
+		}
+	}
+	ctx, cancel := context.WithTimeout(parent, effective)
+	return ctx, cancel, effective
+}
+
 func compactConnError(err error) string {
 	if err == nil {
 		return ""
@@ -662,6 +1012,19 @@ func compactConnError(err error) string {
 	return err.Error()
 }
 
+func isHTTPStatusError(err error, statusCode int) bool {
+	var wsErr *WsHandshakeError
+	return errors.As(err, &wsErr) && wsErr.StatusCode == statusCode
+}
+
+func logCfConnError(format string, err error, args ...any) {
+	if isHTTPStatusError(err, http.StatusTooManyRequests) {
+		logWarn.Printf(format, args...)
+		return
+	}
+	logError.Printf(format, args...)
+}
+
 func wsConnectOnce(ctx context.Context, dialAddr, domain, path string, timeout time.Duration) (*RawWebSocket, error) {
 	if dialAddr == "" {
 		return nil, fmt.Errorf("empty dial address")
@@ -673,6 +1036,7 @@ func wsConnectOnce(ctx context.Context, dialAddr, domain, path string, timeout t
 
 	tlsCfg := tlsConfigPool.Clone()
 	tlsCfg.ServerName = domain
+	tlsCfg.InsecureSkipVerify = true
 
 	targetAddr := net.JoinHostPort(dialAddr, "443")
 	rawConn, err := dialer.DialContext(ctx, "tcp", targetAddr)
@@ -690,6 +1054,7 @@ func wsConnectOnce(ctx context.Context, dialAddr, domain, path string, timeout t
 	_ = tlsConn.SetDeadline(time.Now().Add(handshakeTimeout))
 	if err := tlsConn.HandshakeContext(handshakeCtx); err != nil {
 		rawConn.Close()
+		logDebug.Printf(" ws tls fail %s via %s: %s", domain, dialAddr, compactConnError(err))
 		return nil, err
 	}
 	_ = tlsConn.SetDeadline(time.Time{})
@@ -707,7 +1072,6 @@ func wsConnectOnce(ctx context.Context, dialAddr, domain, path string, timeout t
 			"Sec-WebSocket-Key: %s\r\n"+
 			"Sec-WebSocket-Version: 13\r\n"+
 			"Sec-WebSocket-Protocol: binary\r\n"+
-			"Origin: https://web.telegram.org\r\n"+
 			"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) "+
 			"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36\r\n\r\n",
 		path, domain, wsKey,
@@ -754,18 +1118,14 @@ func wsConnectOnce(ctx context.Context, dialAddr, domain, path string, timeout t
 		statusCode, _ = strconv.Atoi(parts[1])
 	}
 
+	if statusCode == 101 {
+		return &RawWebSocket{conn: rawConn, bufReader: bufReader}, nil
+	}
 	headers := make(map[string]string)
 	for _, hl := range responseLines[1:] {
 		if idx := strings.IndexByte(hl, ':'); idx >= 0 {
 			headers[strings.TrimSpace(strings.ToLower(hl[:idx]))] = strings.TrimSpace(hl[idx+1:])
 		}
-	}
-	if statusCode == 101 {
-		if headers["sec-websocket-accept"] != expectedWebSocketAccept(wsKey) {
-			rawConn.Close()
-			return nil, fmt.Errorf("invalid Sec-WebSocket-Accept")
-		}
-		return &RawWebSocket{conn: rawConn, bufReader: bufReader}, nil
 	}
 	rawConn.Close()
 	return nil, &WsHandshakeError{
@@ -782,38 +1142,39 @@ func cfConnectDomain(ctx context.Context, domain, path string, timeout float64) 
 	}
 
 	attemptTimeout := wsConnectTimeout(timeout)
-	attemptCtx, cancel := context.WithTimeout(ctx, attemptTimeout)
-	defer cancel()
-
-	resolvedIP := resolveDoH(attemptCtx, domain)
-	if resolvedIP != "" {
-		logDebug.Printf(" CF DNS %s -> %s", domain, resolvedIP)
-		ws, err := wsConnectOnce(
-			attemptCtx,
-			resolvedIP,
-			domain,
-			path,
-			contextRemainingTimeout(attemptCtx, attemptTimeout),
-		)
-		if err == nil {
-			return ws, resolvedIP, nil
-		}
-		if attemptCtx.Err() == nil {
-			logError.Printf(" CF IP fail %s (%s): %s", domain, resolvedIP, compactConnError(err))
-		}
-	} else {
-		logDebug.Printf(" CF DNS %s -> no result", domain)
+	phaseTimeout := attemptTimeout
+	if phaseTimeout > cfproxyDialPhaseTimeout {
+		phaseTimeout = cfproxyDialPhaseTimeout
 	}
 
-	ws, err := wsConnectOnce(
-		attemptCtx,
-		domain,
-		domain,
-		path,
-		contextRemainingTimeout(attemptCtx, attemptTimeout),
-	)
+	hostCtx, cancelHost, hostTimeout := newTimedAttemptContext(ctx, phaseTimeout)
+	ws, hostErr := wsConnectOnce(hostCtx, domain, domain, path, hostTimeout)
+	cancelHost()
+	if hostErr == nil {
+		return ws, "", nil
+	}
+	if isHTTPStatusError(hostErr, http.StatusTooManyRequests) {
+		return nil, "", hostErr
+	}
+	if ctx.Err() != nil {
+		return nil, "", hostErr
+	}
+
+	resolvedIP := resolveDoH(ctx, domain)
+	if resolvedIP == "" {
+		logDebug.Printf(" CF DNS %s -> no result", domain)
+		return nil, "", hostErr
+	}
+
+	logDebug.Printf(" CF DNS %s -> %s", domain, resolvedIP)
+	ipCtx, cancelIP, ipTimeout := newTimedAttemptContext(ctx, phaseTimeout)
+	ws, err := wsConnectOnce(ipCtx, resolvedIP, domain, path, ipTimeout)
+	cancelIP()
 	if err == nil {
 		return ws, resolvedIP, nil
+	}
+	if ctx.Err() == nil {
+		logCfConnError(" CF IP fail %s (%s): %s", err, domain, resolvedIP, compactConnError(err))
 	}
 	return nil, resolvedIP, err
 }
@@ -844,6 +1205,36 @@ func wsConnect(ctx context.Context, ip, domain, path string, timeout float64) (*
 	}
 
 	return nil, err
+}
+
+func connectDirectWS(ctx context.Context, target string, domains []string, timeout float64) (*RawWebSocket, bool, bool) {
+	if len(domains) == 0 {
+		return nil, false, false
+	}
+
+	wsFailedRedirect := false
+	allRedirects := true
+
+	for _, dom := range domains {
+		ws, err := wsConnect(ctx, target, dom, "/apiws", timeout)
+		if err == nil {
+			return ws, wsFailedRedirect, false
+		}
+
+		stats.wsErrors.Add(1)
+		var wsErr *WsHandshakeError
+		if errors.As(err, &wsErr) {
+			if wsErr.IsRedirect() {
+				wsFailedRedirect = true
+			} else {
+				allRedirects = false
+			}
+		} else {
+			allRedirects = false
+		}
+	}
+
+	return nil, wsFailedRedirect, allRedirects
 }
 
 func (ws *RawWebSocket) writeFrame(frame []byte, timeout time.Duration) error {
@@ -1240,6 +1631,16 @@ func (s *MsgSplitter) Split(chunk []byte) [][]byte {
 	return parts
 }
 
+func (s *MsgSplitter) Flush() [][]byte {
+	if len(s.cipherBuf) == 0 {
+		return nil
+	}
+	tail := append([]byte(nil), s.cipherBuf...)
+	s.cipherBuf = nil
+	s.plainBuf = nil
+	return [][]byte{tail}
+}
+
 func (s *MsgSplitter) nextPacketLen() int {
 	if len(s.plainBuf) == 0 {
 		return -1
@@ -1312,9 +1713,8 @@ type dcSlot struct {
 }
 
 type poolEntry struct {
-	ws        *RawWebSocket
-	created   int64
-	validated int64
+	ws      *RawWebSocket
+	created int64
 }
 
 type WsPool struct {
@@ -1341,14 +1741,8 @@ func isPoolEntryUsable(e *poolEntry, now int64) bool {
 	if e == nil || e.ws == nil || e.ws.closed.Load() {
 		return false
 	}
-	if now-e.created > int64(wsPoolMaxAge) {
+	if now-e.created > int64(wsPoolReuseMaxAge) {
 		return false
-	}
-	if e.validated == 0 || now-e.validated > int64(wsPoolProbeAfter) {
-		if err := e.ws.probe(wsPoolProbeTimeout); err != nil {
-			return false
-		}
-		e.validated = now
 	}
 	return true
 }
@@ -1400,13 +1794,9 @@ func (p *WsPool) refill(ctx context.Context, slot dcSlot, q chan *poolEntry, s *
 		go func() {
 			defer wg.Done()
 			if ws := connectOneWS(ctx, targetIP, domains); ws != nil {
-				if err := ws.probe(wsPoolProbeTimeout); err != nil {
-					SafeClose(ws.conn)
-					return
-				}
 				now := time.Now().Unix()
 				select {
-				case q <- &poolEntry{ws: ws, created: now, validated: now}:
+				case q <- &poolEntry{ws: ws, created: now}:
 				case <-ctx.Done():
 					SafeClose(ws.conn)
 				default:
@@ -1439,59 +1829,6 @@ func (p *WsPool) Warmup(ctx context.Context, dcOptMap map[int]string) {
 	}
 }
 
-func (p *WsPool) Maintain(ctx context.Context, dcOptMap map[int]string) {
-	ticker := time.NewTicker(time.Duration(poolMaintainInterval) * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			p.queues.Range(func(key, val interface{}) bool {
-				slot := key.(dcSlot)
-				q := val.(chan *poolEntry)
-				s, _ := p.status.Load(slot)
-
-				sz := len(q)
-				for i := 0; i < sz; i++ {
-					select {
-					case e := <-q:
-						now := time.Now().Unix()
-						if now-e.created > int64(wsPoolMaxAge) || e.ws.closed.Load() {
-							SafeClose(e.ws.conn)
-						} else {
-							needsProbe := e.validated == 0 || now-e.validated > int64(wsPoolProbeAfter)
-							if needsProbe {
-								if err := e.ws.probe(wsPoolProbeTimeout); err != nil {
-									SafeClose(e.ws.conn)
-									continue
-								}
-								e.validated = now
-							} else if err := e.ws.SendPing(); err != nil {
-								SafeClose(e.ws.conn)
-								continue
-							}
-							select {
-							case q <- e:
-							default:
-								SafeClose(e.ws.conn)
-							}
-						}
-					default:
-					}
-				}
-
-				if len(q) < int(poolSize.Load()) && s.(*atomic.Int32).CompareAndSwap(0, 1) {
-					isMediaBool := slot.isMedia == 1
-					dms := wsDomains(slot.dc, isMediaBool)
-					go p.refill(ctx, slot, q, s.(*atomic.Int32), dcOptMap[slot.dc], dms)
-				}
-				return true
-			})
-		}
-	}
-}
 func (p *WsPool) IdleCount() int {
 	count := 0
 	p.queues.Range(func(_, val interface{}) bool {
@@ -1612,6 +1949,20 @@ func bridgeWS(ctx context.Context, conn net.Conn, ws *RawWebSocket,
 				}
 			}
 			if err != nil {
+				if splitter != nil {
+					tail := splitter.Flush()
+					if len(tail) > 0 {
+						if len(tail) > 1 {
+							if sendErr := ws.SendBatch(tail); sendErr != nil {
+								return
+							}
+						} else {
+							if sendErr := ws.Send(tail[0]); sendErr != nil {
+								return
+							}
+						}
+					}
+				}
 				return
 			}
 		}
@@ -1712,6 +2063,47 @@ func tcpFallback(ctx context.Context, client net.Conn, dst string, port int,
 	return true
 }
 
+func tryCfproxyBaseDomain(ctx context.Context, dc int, baseDomain string) (*RawWebSocket, string) {
+	baseDomain = normalizeCfDomain(baseDomain)
+	if baseDomain == "" {
+		return nil, ""
+	}
+	if remaining := cfproxy429CooldownRemaining(baseDomain); remaining > 0 {
+		logDebug.Printf(" CF skip %s: 429 cooldown %.0fs", baseDomain, math.Ceil(remaining.Seconds()))
+		return nil, ""
+	}
+	if !acquireCfproxyAttemptSlot(ctx) {
+		return nil, ""
+	}
+	defer releaseCfproxyAttemptSlot()
+
+	domain := fmt.Sprintf("kws%d.%s", dc, baseDomain)
+	logDebug.Printf(" CF try %s", domain)
+
+	ws, resolvedIP, err := cfConnectDomain(ctx, domain, "/apiws", 5)
+	if err != nil {
+		if ctx.Err() == nil && isHTTPStatusError(err, http.StatusTooManyRequests) {
+			markCfproxy429Cooldown(baseDomain, err)
+		}
+		if ctx.Err() == nil {
+			if resolvedIP != "" {
+				logCfConnError(" CF fail %s via %s: %s", err, domain, resolvedIP, compactConnError(err))
+			} else {
+				logCfConnError(" CF fail %s: %s", err, domain, compactConnError(err))
+			}
+		}
+		return nil, ""
+	}
+
+	clearCfproxy429Cooldown(baseDomain)
+	if resolvedIP != "" {
+		logDebug.Printf(" CF ok %s via %s", domain, resolvedIP)
+	} else {
+		logDebug.Printf(" CF ok %s via hostname", domain)
+	}
+	return ws, baseDomain
+}
+
 func cfproxyFallback(ctx context.Context, conn net.Conn, relayInit []byte, label string,
 	dc int, isMedia bool, splitter *MsgSplitter,
 	cltDec, cltEnc, tgEnc, tgDec cipher.Stream) bool {
@@ -1736,60 +2128,70 @@ func cfproxyFallback(ctx context.Context, conn net.Conn, relayInit []byte, label
 	mTag := mediaTag(isMedia)
 	logDebug.Printf(" CF fallback DC%d%s: %d домен(ов)", dc, mTag, len(ordered))
 
-	type wsResult struct {
-		ws     *RawWebSocket
-		domain string
-	}
-	attemptCtx, cancelAttempts := context.WithCancel(ctx)
-	defer cancelAttempts()
-	ch := make(chan wsResult, len(ordered))
-	for _, baseDomain := range ordered {
-		go func(bd string) {
-			domain := fmt.Sprintf("kws%d.%s", dc, bd)
-			logDebug.Printf(" CF try %s", domain)
-			ws, resolvedIP, err := cfConnectDomain(attemptCtx, domain, "/apiws", 5)
-			if err != nil {
-				if attemptCtx.Err() == nil {
-					if resolvedIP != "" {
-						logError.Printf(" CF fail %s via %s: %s", domain, resolvedIP, compactConnError(err))
-					} else {
-						logError.Printf(" CF fail %s: %s", domain, compactConnError(err))
-					}
-				}
-				ch <- wsResult{nil, ""}
-				return
-			}
-			if resolvedIP != "" {
-				logDebug.Printf(" CF ok %s via %s", domain, resolvedIP)
-			} else {
-				logDebug.Printf(" CF ok %s via hostname", domain)
-			}
-			ch <- wsResult{ws, bd}
-		}(baseDomain)
-	}
-
 	var ws *RawWebSocket
 	var chosenDomain string
-	for i := 0; i < len(ordered); i++ {
-		r := <-ch
-		if r.ws != nil && ws == nil {
-			ws = r.ws
-			chosenDomain = r.domain
-			cancelAttempts()
-			remaining := len(ordered) - i - 1
-			if remaining > 0 {
-				go func(left int) {
-					for j := 0; j < left; j++ {
-						rr := <-ch
-						if rr.ws != nil {
-							go rr.ws.Close()
-						}
+
+	if len(ordered) > 0 && ordered[0] != "" {
+		ws, chosenDomain = tryCfproxyBaseDomain(ctx, dc, ordered[0])
+	}
+
+	if ws == nil && len(ordered) > 1 {
+		remainingDomains := ordered[1:]
+
+		type wsResult struct {
+			ws     *RawWebSocket
+			domain string
+		}
+		attemptCtx, cancelAttempts := context.WithCancel(ctx)
+		defer cancelAttempts()
+
+		ch := make(chan wsResult, len(remainingDomains))
+		sem := make(chan struct{}, cfproxyFallbackParallel)
+		for _, baseDomain := range remainingDomains {
+			go func(bd string) {
+				select {
+				case sem <- struct{}{}:
+				case <-attemptCtx.Done():
+					ch <- wsResult{}
+					return
+				}
+				defer func() { <-sem }()
+
+				nextWS, nextDomain := tryCfproxyBaseDomain(attemptCtx, dc, bd)
+				if nextWS != nil {
+					select {
+					case ch <- wsResult{ws: nextWS, domain: nextDomain}:
+					case <-attemptCtx.Done():
+						go nextWS.Close()
+						ch <- wsResult{}
 					}
-				}(remaining)
+					return
+				}
+				ch <- wsResult{}
+			}(baseDomain)
+		}
+
+		for i := 0; i < len(remainingDomains); i++ {
+			r := <-ch
+			if r.ws != nil && ws == nil {
+				ws = r.ws
+				chosenDomain = r.domain
+				cancelAttempts()
+				remaining := len(remainingDomains) - i - 1
+				if remaining > 0 {
+					go func(left int) {
+						for j := 0; j < left; j++ {
+							rr := <-ch
+							if rr.ws != nil {
+								go rr.ws.Close()
+							}
+						}
+					}(remaining)
+				}
+				break
+			} else if r.ws != nil {
+				go r.ws.Close()
 			}
-			break
-		} else if r.ws != nil {
-			go r.ws.Close()
 		}
 	}
 
@@ -1802,6 +2204,7 @@ func cfproxyFallback(ctx context.Context, conn net.Conn, relayInit []byte, label
 		cfproxyMu.Lock()
 		activeCfDomain = chosenDomain
 		cfproxyMu.Unlock()
+		saveActiveCfproxyDomain(chosenDomain)
 		logInfo.Printf(" CF домен  %s", chosenDomain)
 	}
 
@@ -1834,15 +2237,7 @@ func doFallback(ctx context.Context, conn net.Conn, relayInit []byte, label stri
 		tgDec = t.Clone()
 	}
 
-	var fallbackDst string
-	dcOptMu.RLock()
-	if ip, ok := dcOpt[dc]; ok && ip != "" {
-		fallbackDst = ip
-	}
-	dcOptMu.RUnlock()
-	if fallbackDst == "" {
-		fallbackDst = dcDefaultIPs[dc]
-	}
+	fallbackDst := resolveFallbackTarget(dc, isMedia)
 
 	cfproxyMu.RLock()
 	useCf := cfproxyEnabled
@@ -2239,15 +2634,7 @@ func handleClient(ctx context.Context, conn net.Conn) {
 
 	splitter, _ := newMsgSplitter(relayInit, proto)
 
-	dcOptMu.RLock()
-	target, dcConfigured := dcOpt[dc]
-	if isMedia {
-		if t, ok := dcOpt[-dc]; ok && t != "" {
-			target = t
-			dcConfigured = true
-		}
-	}
-	dcOptMu.RUnlock()
+	target, dcConfigured := resolveConfiguredTarget(dc, isMedia)
 
 	wsBlackMu.RLock()
 	blacklisted := wsBlacklist[dcKey]
@@ -2268,60 +2655,7 @@ func handleClient(ctx context.Context, conn net.Conn) {
 	}
 
 	domains := wsDomains(dc, isMedia)
-	ws := wsPool.Get(ctx, dc, isMedia, target, domains)
-
-	wsFailedRedirect := false
-	allRedirects := true
-
-	if ws == nil {
-		type wsRes struct {
-			ws  *RawWebSocket
-			err error
-		}
-		attemptCtx, cancelAttempts := context.WithCancel(ctx)
-		defer cancelAttempts()
-		resCh := make(chan wsRes, len(domains))
-		for _, dom := range domains {
-			go func(d string) {
-				w, err := wsConnect(attemptCtx, target, d, "/apiws", wsTimeout)
-				resCh <- wsRes{w, err}
-			}(dom)
-		}
-
-		for i := 0; i < len(domains); i++ {
-			r := <-resCh
-			if r.err == nil {
-				ws = r.ws
-				allRedirects = false
-				cancelAttempts()
-
-				remaining := len(domains) - i - 1
-				if remaining > 0 {
-					go func(left int) {
-						for j := 0; j < left; j++ {
-							rr := <-resCh
-							if rr.ws != nil {
-								rr.ws.Close()
-							}
-						}
-					}(remaining)
-				}
-
-				break
-			}
-
-			stats.wsErrors.Add(1)
-			if wsErr, ok := r.err.(*WsHandshakeError); ok {
-				if wsErr.IsRedirect() {
-					wsFailedRedirect = true
-				} else {
-					allRedirects = false
-				}
-			} else {
-				allRedirects = false
-			}
-		}
-	}
+	ws, wsFailedRedirect, allRedirects := connectDirectWS(ctx, target, domains, wsTimeout)
 
 	if ws == nil {
 		logWarn.Printf(" DC%d%s: все попытки WS провалены (DPI/Интернет)", dc, mTag)
@@ -2341,17 +2675,53 @@ func handleClient(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	sendDirectInit := func(activeWS *RawWebSocket) error {
+		if err := activeWS.Send(relayInit); err != nil {
+			return err
+		}
+		logDebug.Printf(" direct relayInit sent DC%d%s", dc, mTag)
+		return nil
+	}
+
+	if err := sendDirectInit(ws); err != nil {
+		logWarn.Printf(" direct relayInit write fail DC%d%s: %s", dc, mTag, compactConnError(err))
+		ws.Close()
+
+		dcFailMu.Lock()
+		dcFailUntil[dcKey] = now + dcFailCooldown
+		dcFailMu.Unlock()
+
+		logWarn.Printf(" direct retry fresh ws DC%d%s", dc, mTag)
+		retryWS, retryFailedRedirect, retryAllRedirects := connectDirectWS(ctx, target, domains, wsTimeout)
+		if retryWS == nil {
+			if retryFailedRedirect && retryAllRedirects {
+				wsBlackMu.Lock()
+				wsBlacklist[dcKey] = true
+				wsBlackMu.Unlock()
+				logWarn.Printf(" DC%d%s заблокирован (302)", dc, mTag)
+			}
+			logWarn.Printf(" direct fallback DC%d%s", dc, mTag)
+			splitterFb, _ := newMsgSplitter(relayInit, proto)
+			doFallback(ctx, clientConn, relayInit, label, dc, isMedia, splitterFb, cltDecryptor, cltEncryptor, tgEncryptor, tgDecryptor)
+			return
+		}
+
+		ws = retryWS
+		if err = sendDirectInit(ws); err != nil {
+			logWarn.Printf(" direct relayInit write fail DC%d%s: %s", dc, mTag, compactConnError(err))
+			ws.Close()
+			logWarn.Printf(" direct fallback DC%d%s", dc, mTag)
+			splitterFb, _ := newMsgSplitter(relayInit, proto)
+			doFallback(ctx, clientConn, relayInit, label, dc, isMedia, splitterFb, cltDecryptor, cltEncryptor, tgEncryptor, tgDecryptor)
+			return
+		}
+	}
+
 	dcFailMu.Lock()
 	delete(dcFailUntil, dcKey)
 	dcFailMu.Unlock()
 
 	stats.connectionsWs.Add(1)
-
-	if err := ws.Send(relayInit); err != nil {
-		ws.Close()
-		tcpFallback(ctx, clientConn, target, 443, relayInit, label, dc, isMedia, cltDecryptor, cltEncryptor, tgEncryptor, tgDecryptor)
-		return
-	}
 
 	bridgeWS(ctx, clientConn, ws, label, dc, target, 443, isMedia, splitter, cltDecryptor, cltEncryptor, tgEncryptor, tgDecryptor)
 }
@@ -2375,15 +2745,6 @@ func runProxy(ctx context.Context, host string, port int, dcOptMap map[int]strin
 	}
 	signalProxyStart(started, nil)
 
-	if tcpL, ok := listener.(*net.TCPListener); ok {
-		raw, err := tcpL.SyscallConn()
-		if err == nil {
-			_ = raw.Control(func(fd uintptr) {
-				_ = syscall.SetsockoptInt(int(fd), syscall.IPPROTO_TCP, syscall.TCP_NODELAY, 1)
-			})
-		}
-	}
-
 	srvCtx, srvCancel := context.WithCancel(ctx)
 	defer srvCancel()
 
@@ -2401,14 +2762,10 @@ func runProxy(ctx context.Context, host string, port int, dcOptMap map[int]strin
 			case <-srvCtx.Done():
 				return
 			case <-ticker.C:
-				idleCount := wsPool.IdleCount()
-				logInfo.Printf(" %s | пул:%d", stats.SummaryRu(), idleCount)
+				logInfo.Printf(" %s", stats.SummaryRu())
 			}
 		}
 	}()
-
-	wsPool.Warmup(srvCtx, dcOptMap)
-	go wsPool.Maintain(srvCtx, dcOptMap)
 
 	var activeConns sync.WaitGroup
 
@@ -2454,6 +2811,9 @@ func runProxy(ctx context.Context, host string, port int, dcOptMap map[int]strin
 
 func parseCIDRPool(cidrsStr string) (map[int]string, error) {
 	result := make(map[int]string)
+	if strings.TrimSpace(cidrsStr) == "" {
+		return result, nil
+	}
 	pairs := strings.Split(cidrsStr, ",")
 	for _, pair := range pairs {
 		parts := strings.Split(pair, ":")
@@ -2461,7 +2821,9 @@ func parseCIDRPool(cidrsStr string) (map[int]string, error) {
 			dcRaw := strings.TrimSpace(parts[0])
 			ipRaw := strings.TrimSpace(parts[1])
 			if dc, err := strconv.Atoi(dcRaw); err == nil && ipRaw != "" {
-				result[dc] = ipRaw
+				if parsedIP := net.ParseIP(ipRaw); parsedIP != nil {
+					result[dc] = parsedIP.String()
+				}
 			}
 		}
 	}
@@ -2504,6 +2866,7 @@ func StartProxy(cHost *C.char, port C.int, cDcIps *C.char, cSecret *C.char, verb
 	isVerbose := int(verbose) != 0
 
 	initLogging(isVerbose)
+	clearCfproxy429Cooldowns()
 
 	if len(secretStr) == 32 {
 		if _, err := hex.DecodeString(secretStr); err == nil {
@@ -2560,6 +2923,8 @@ func StopProxy() C.int {
 	dcFailUntil = make(map[[2]int]float64)
 	dcFailMu.Unlock()
 
+	clearCfproxy429Cooldowns()
+
 	return 0
 }
 
@@ -2573,6 +2938,13 @@ func SetPoolSize(size C.int) {
 		n = 16
 	}
 	poolSize.Store(n)
+}
+
+//export SetCfProxyCacheDir
+func SetCfProxyCacheDir(cCacheDir *C.char) {
+	cfproxyMu.Lock()
+	cfproxyCacheDir = strings.TrimSpace(C.GoString(cCacheDir))
+	cfproxyMu.Unlock()
 }
 
 //export SetCfProxyConfig

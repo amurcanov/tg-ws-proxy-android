@@ -12,6 +12,7 @@ interface ProxyLibrary : Library {
     fun StartProxy(host: String, port: Int, dcIps: String, secret: String, verbose: Int): Int
     fun StopProxy(): Int
     fun SetPoolSize(size: Int)
+    fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
     fun SetFakeTls(enabled: Int, domain: String)
     fun GetSecretWithPrefix(): Pointer?
@@ -22,12 +23,20 @@ interface ProxyLibrary : Library {
 object NativeProxy {
     fun startProxy(host: String, port: Int, dcIps: String, secret: String, verbose: Int): Int {
         return ProxyLibrary.INSTANCE.StartProxy(host, port, dcIps, secret, verbose)
-    }    fun stopProxy(): Int {
+    }
+
+    fun stopProxy(): Int {
         return ProxyLibrary.INSTANCE.StopProxy()
     }
+
     fun setPoolSize(size: Int) {
         ProxyLibrary.INSTANCE.SetPoolSize(size)
     }
+
+    fun setCfProxyCacheDir(cacheDir: String) {
+        ProxyLibrary.INSTANCE.SetCfProxyCacheDir(cacheDir)
+    }
+
     fun setCfProxyConfig(enabled: Boolean, priority: Boolean, userDomain: String) {
         ProxyLibrary.INSTANCE.SetCfProxyConfig(
             if (enabled) 1 else 0,
@@ -35,9 +44,11 @@ object NativeProxy {
             userDomain
         )
     }
+
     fun setFakeTls(enabled: Boolean, domain: String = "") {
         ProxyLibrary.INSTANCE.SetFakeTls(if (enabled) 1 else 0, domain)
     }
+
     /** Returns the full secret with correct prefix (dd or ee+domain_hex) */
     fun getSecretWithPrefix(): String? {
         val ptr = ProxyLibrary.INSTANCE.GetSecretWithPrefix() ?: return null
@@ -45,6 +56,7 @@ object NativeProxy {
         ProxyLibrary.INSTANCE.FreeString(ptr)
         return res
     }
+
     fun getStats(): String? {
         val ptr = ProxyLibrary.INSTANCE.GetStats() ?: return null
         val res = ptr.getString(0)
