@@ -1,8 +1,6 @@
 <div align="center">
   
-  # TG WS Proxy Android
-<img width="256" height="256" alt="play_store_512-round (1)" src="https://github.com/user-attachments/assets/3ff56f8f-6b17-4c76-8f5a-c635cb73cc96" />
-
+  # Telegram WS Proxy Android
 <br>
   <img src="https://img.shields.io/badge/Android-SDK_24--36-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android SDK">
   <img src="https://img.shields.io/badge/Go-1.19_--_1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go Version">
@@ -18,22 +16,6 @@
 ---
 
 <img width="972" height="696" alt="MyCollages (5)" src="https://github.com/user-attachments/assets/7c9b9f2a-fc60-4aee-b93d-db950e24555c" />
-
----
-
-# 🎦 Видео гайд по установке и использованию
-
-<div align="center">
-
-<img width="1376" height="768" alt="578516258-6b2df494-de8d-44a2-a281-389fc7551a7c" src="https://github.com/user-attachments/assets/ed1449d4-0a14-4b46-8f35-b787bdee3e32" />
-
-<br><br>
-
-[**Смотреть на YouTube**](https://youtu.be/RP4RwyEHpwc) | [**Смотреть на Dzen**](https://dzen.ru/video/watch/69dcda2bd250b343c4de82ac) | [**Смотреть на VK Video**](https://vkvideo.ru/video-234234162_456239074) | [**Смотреть в Telegram**](https://t.me/avencoreschat/506796)
-
-</div>
-
----
 
 ## Возможности Android-версии
 
@@ -76,6 +58,21 @@ Telegram Android → Локальный MTProto (по умолчанию 127.0.0
 6. Нажмите **«Применить в Telegram»** — откроется Telegram-клиент, где останется только подтвердить подключение.
 
 ---
+
+# 🎦 Видео гайд по установке и использованию
+
+<div align="center">
+
+<img width="1376" height="768" alt="578516258-6b2df494-de8d-44a2-a281-389fc7551a7c" src="https://github.com/user-attachments/assets/ed1449d4-0a14-4b46-8f35-b787bdee3e32" />
+
+<br><br>
+
+[**Смотреть на YouTube**](https://youtu.be/RP4RwyEHpwc) | [**Смотреть на Dzen**](https://dzen.ru/video/watch/69dcda2bd250b343c4de82ac) | [**Смотреть на VK Video**](https://vkvideo.ru/video-234234162_456239074) | [**Смотреть в Telegram**](https://t.me/avencoreschat/506796)
+
+</div>
+
+---
+
 
 * **Краши и проблемы с установкой:** если у вас возникают сбои, вылеты или ошибки при установке, пожалуйста, сохраняйте отчёты и ссылки на них. Также ознакомьтесь с блоком `NOTE` ниже и поднимайте полноценные `issue` с полезной технической информацией.
 
