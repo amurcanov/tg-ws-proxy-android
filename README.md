@@ -67,7 +67,7 @@ Telegram Android → Локальный MTProto (по умолчанию 127.0.0
 
 <br><br>
 
-[**Смотреть на YouTube**](https://youtu.be/RP4RwyEHpwc) | [**Смотреть на Dzen**](https://dzen.ru/video/watch/69dcda2bd250b343c4de82ac) | [**Смотреть на VK Video**](https://vkvideo.ru/video-234234162_456239074) | [**Смотреть в Telegram**](https://t.me/avencoreschat/506796)
+[**Смотреть на YouTube**](https://youtu.be/RP4RwyEHpwc) | [**Смотреть на VK Video**](https://vkvideo.ru/video-234234162_456239074) | [**Смотреть в Telegram**](https://t.me/avencoreschat/506796)
 
 </div>
 
