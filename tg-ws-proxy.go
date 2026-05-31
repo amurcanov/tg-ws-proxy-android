@@ -56,8 +56,8 @@ import (
 const (
 	defaultPort    = 1443
 	tcpNodelay     = true
-	defaultRecvBuf = 256 * 1024
-	defaultSendBuf = 256 * 1024
+	defaultRecvBuf = 1024 * 1024
+	defaultSendBuf = 1024 * 1024
 	defaultPoolSz  = 4
 
 	wsPoolMaxAge = 120.0
@@ -69,25 +69,28 @@ const (
 	poolMaintainInterval = 5
 
 	// Bridge read deadlines — short enough to detect dead connections on mobile
-	bridgeReadTimeout  = 2 * time.Minute
-	bridgePingInterval = 30 * time.Second
-	wsWriteTimeout     = 5 * time.Second
-	wsControlTimeout   = 2 * time.Second
-	wsPoolProbeTimeout = 1200 * time.Millisecond
-	wsPoolProbeAfter   = 8.0
-	wsBridgeChunkSize  = 64 * 1024
-	pooledFrameCap     = wsBridgeChunkSize + 32
+	bridgeReadTimeout     = 5 * time.Minute
+	bridgeDeadlineRefresh = 15 * time.Second
+	bridgePingInterval    = 30 * time.Second
+	wsWriteTimeout        = 10 * time.Second
+	wsControlTimeout      = 2 * time.Second
+	wsPoolProbeTimeout    = 1200 * time.Millisecond
+	wsPoolProbeAfter      = 8.0
+	wsBridgeChunkSize     = 128 * 1024
+	pooledFrameCap        = wsBridgeChunkSize + 32
+	pooledPayloadCap      = 256 * 1024
 
 	wsPoolReuseMaxAge = 30.0
 
 	cfproxyCacheFileName    = "cfproxy-domains-cache.txt"
 	cfproxyActiveFileName   = "cfproxy-active-domain.txt"
-	cfproxyRefreshInterval  = 12 * time.Hour
+	cfproxyRefreshInterval  = time.Hour
 	cfproxyDialPhaseTimeout = 4 * time.Second
 	cfproxyFallbackParallel = 2
 	cfproxy429Cooldown      = 45 * time.Second
 	cfproxy429MaxCooldown   = 5 * time.Minute
 	cfproxyGlobalParallel   = 4
+	cfproxyMinValidDomains  = 3
 )
 
 var (
@@ -233,7 +236,18 @@ func initLogging(verbose bool) {
 // Cloudflare proxy domain decoding
 // ---------------------------------------------------------------------------
 
-var cfproxyEnc = []string{"virkgj.com", "vmmzovy.com", "mkuosckvso.com", "zaewayzmplad.com", "twdmbzcm.com"}
+var cfproxyEnc = []string{
+	"virkgj.com",
+	"vmmzovy.com",
+	"mkuosckvso.com",
+	"zaewayzmplad.com",
+	"twdmbzcm.com",
+	"awzwsldi.com",
+	"clngqrflngqin.com",
+	"tjacxbqtj.com",
+	"bxaxtxmrw.com",
+	"dmohrsgmohcrwb.com",
+}
 
 func decodeCfDomain(s string) string {
 	if !strings.HasSuffix(s, ".com") {
@@ -590,7 +604,8 @@ func tryRefreshCfproxyDomains(ctx context.Context) bool {
 		return true
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "GET", cfproxyDomainsURL, nil)
+	refreshURL := fmt.Sprintf("%s?%d", cfproxyDomainsURL, time.Now().UnixNano())
+	req, err := http.NewRequestWithContext(ctx, "GET", refreshURL, nil)
 	if err != nil {
 		return false
 	}
@@ -623,7 +638,7 @@ func tryRefreshCfproxyDomains(ctx context.Context) bool {
 		return false
 	}
 
-	if len(newDomains) > 0 {
+	if len(newDomains) >= cfproxyMinValidDomains {
 		merged := mergeCfproxyDomains(newDomains, defaultCfproxyDomains())
 		cfproxyMu.Lock()
 		if cfproxyUserDomain != "" {
@@ -638,6 +653,9 @@ func tryRefreshCfproxyDomains(ctx context.Context) bool {
 		saveCfproxyDomainsToCache(merged)
 		logInfo.Printf(" CF: список доменов обновлен (%d шт.)", len(newDomains))
 		return true
+	}
+	if len(newDomains) > 0 {
+		logDebug.Printf(" CF: fetched domain list is too small (%d)", len(newDomains))
 	}
 	return false
 }
@@ -795,7 +813,32 @@ func xorMaskInPlace(data, mask []byte) {
 // ---------------------------------------------------------------------------
 
 var bytesPool = sync.Pool{
-	New: func() any { return make([]byte, 131072) },
+	New: func() any { return make([]byte, wsBridgeChunkSize) },
+}
+
+var payloadPool = sync.Pool{
+	New: func() any { return make([]byte, pooledPayloadCap) },
+}
+
+func getPayloadBuffer(length uint64) []byte {
+	if length <= pooledPayloadCap {
+		return payloadPool.Get().([]byte)[:int(length)]
+	}
+	return make([]byte, int(length))
+}
+
+func recyclePayload(payload []byte) {
+	if cap(payload) == pooledPayloadCap {
+		payloadPool.Put(payload[:pooledPayloadCap])
+	}
+}
+
+func refreshReadDeadline(conn net.Conn, nextRefresh *time.Time) {
+	now := time.Now()
+	if nextRefresh.IsZero() || !now.Before(*nextRefresh) {
+		_ = conn.SetReadDeadline(now.Add(bridgeReadTimeout))
+		*nextRefresh = now.Add(bridgeDeadlineRefresh)
+	}
 }
 
 func SafeClose(conn net.Conn) {
@@ -1308,15 +1351,20 @@ func (ws *RawWebSocket) probe(timeout time.Duration) error {
 		}
 		switch opcode {
 		case opPong:
+			recyclePayload(payload)
 			return nil
 		case opPing:
 			if err := ws.writeFrame(ws.buildFrame(opPong, payload, true), wsControlTimeout); err != nil {
+				recyclePayload(payload)
 				return err
 			}
+			recyclePayload(payload)
 		case opClose:
+			recyclePayload(payload)
 			ws.closed.Store(true)
 			return io.EOF
 		default:
+			recyclePayload(payload)
 			return fmt.Errorf("unexpected frame %d during pool probe", opcode)
 		}
 	}
@@ -1338,14 +1386,21 @@ func (ws *RawWebSocket) Recv() ([]byte, error) {
 				closePayload = closePayload[:2]
 			}
 			reply := ws.buildFrame(opClose, closePayload, true)
+			recyclePayload(payload)
 			_ = ws.writeFrame(reply, wsControlTimeout)
 			return nil, io.EOF
 		case opPing:
 			pong := ws.buildFrame(opPong, payload, true)
+			recyclePayload(payload)
 			_ = ws.writeFrame(pong, wsControlTimeout)
+			continue
+		case opPong:
+			recyclePayload(payload)
 			continue
 		case opText, opBinary:
 			return payload, nil
+		default:
+			recyclePayload(payload)
 		}
 	}
 	return nil, io.EOF
@@ -1476,9 +1531,10 @@ func (ws *RawWebSocket) readFrame() (int, []byte, error) {
 	if length > maxFramePayload {
 		return 0, nil, fmt.Errorf("frame too large: %d bytes", length)
 	}
-	payload := make([]byte, length)
+	payload := getPayloadBuffer(length)
 	if length > 0 {
 		if _, err := io.ReadFull(ws.bufReader, payload); err != nil {
+			recyclePayload(payload)
 			return 0, nil, err
 		}
 	}
@@ -1875,6 +1931,9 @@ func bridgeWS(ctx context.Context, conn net.Conn, ws *RawWebSocket,
 
 	ctx2, cancel := context.WithCancel(ctx)
 	defer cancel()
+	startedAt := time.Now()
+	var upBytes atomic.Int64
+	var downBytes atomic.Int64
 
 	go func() {
 		<-ctx2.Done()
@@ -1919,12 +1978,15 @@ func bridgeWS(ctx context.Context, conn net.Conn, ws *RawWebSocket,
 		if readLimit > wsBridgeChunkSize {
 			readLimit = wsBridgeChunkSize
 		}
+		var nextReadDeadline time.Time
+		defer conn.SetReadDeadline(time.Time{})
 		for {
-			_ = conn.SetReadDeadline(time.Now().Add(bridgeReadTimeout))
+			refreshReadDeadline(conn, &nextReadDeadline)
 			n, err := conn.Read(buf[:readLimit])
 			if n > 0 {
 				chunk := buf[:n]
 				stats.bytesUp.Add(int64(n))
+				upBytes.Add(int64(n))
 
 				activityMu.Lock()
 				lastActivity = time.Now()
@@ -1971,14 +2033,17 @@ func bridgeWS(ctx context.Context, conn net.Conn, ws *RawWebSocket,
 	go func() {
 		defer wg.Done()
 		defer cancel()
+		var nextReadDeadline time.Time
+		defer ws.conn.SetReadDeadline(time.Time{})
 		for {
-			_ = ws.conn.SetReadDeadline(time.Now().Add(bridgeReadTimeout))
+			refreshReadDeadline(ws.conn, &nextReadDeadline)
 			data, err := ws.Recv()
 			if err != nil || data == nil {
 				return
 			}
 			n := len(data)
 			stats.bytesDown.Add(int64(n))
+			downBytes.Add(int64(n))
 
 			activityMu.Lock()
 			lastActivity = time.Now()
@@ -1987,18 +2052,31 @@ func bridgeWS(ctx context.Context, conn net.Conn, ws *RawWebSocket,
 			tgDec.XORKeyStream(data, data)
 			cltEnc.XORKeyStream(data, data)
 			if _, werr := conn.Write(data); werr != nil {
+				recyclePayload(data)
 				return
 			}
+			recyclePayload(data)
 		}
 	}()
 
 	wg.Wait()
+	elapsed := time.Since(startedAt)
+	down := downBytes.Load()
+	up := upBytes.Load()
+	if elapsed > 0 && (down > 0 || up > 0) {
+		logDebug.Printf(" WS session DC%d%s closed: down=%s up=%s avg_down=%s/s in %.1fs",
+			dc, mediaTag(isMedia), humanBytes(down), humanBytes(up),
+			humanBytes(int64(float64(down)/elapsed.Seconds())), elapsed.Seconds())
+	}
 }
 
 func bridgeTCP(ctx context.Context, client, remote net.Conn,
 	label string, dc int, dst string, port int, isMedia bool, cltDec, cltEnc, tgEnc, tgDec cipher.Stream) {
 
 	ctx2, cancel := context.WithCancel(ctx)
+	startedAt := time.Now()
+	var upBytes atomic.Int64
+	var downBytes atomic.Int64
 
 	go func() {
 		<-ctx2.Done()
@@ -2014,17 +2092,21 @@ func bridgeTCP(ctx context.Context, client, remote net.Conn,
 		defer cancel()
 		buf := bytesPool.Get().([]byte)
 		defer bytesPool.Put(buf)
+		var nextReadDeadline time.Time
+		defer src.SetReadDeadline(time.Time{})
 		for {
-			_ = src.SetReadDeadline(time.Now().Add(bridgeReadTimeout))
+			refreshReadDeadline(src, &nextReadDeadline)
 			n, err := src.Read(buf[:cap(buf)])
 			if n > 0 {
 				chunk := buf[:n]
 				if isUp {
 					stats.bytesUp.Add(int64(n))
+					upBytes.Add(int64(n))
 					cltDec.XORKeyStream(chunk, chunk)
 					tgEnc.XORKeyStream(chunk, chunk)
 				} else {
 					stats.bytesDown.Add(int64(n))
+					downBytes.Add(int64(n))
 					tgDec.XORKeyStream(chunk, chunk)
 					cltEnc.XORKeyStream(chunk, chunk)
 				}
@@ -2042,6 +2124,14 @@ func bridgeTCP(ctx context.Context, client, remote net.Conn,
 	go forward(remote, client, false)
 
 	wg.Wait()
+	elapsed := time.Since(startedAt)
+	down := downBytes.Load()
+	up := upBytes.Load()
+	if elapsed > 0 && (down > 0 || up > 0) {
+		logDebug.Printf(" TCP session DC%d%s closed: down=%s up=%s avg_down=%s/s in %.1fs",
+			dc, mediaTag(isMedia), humanBytes(down), humanBytes(up),
+			humanBytes(int64(float64(down)/elapsed.Seconds())), elapsed.Seconds())
+	}
 }
 
 func tcpFallback(ctx context.Context, client net.Conn, dst string, port int,
@@ -2053,6 +2143,7 @@ func tcpFallback(ctx context.Context, client net.Conn, dst string, port int,
 	}
 	remote, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(dst, strconv.Itoa(port)))
 	if err != nil {
+		logWarn.Printf(" TCP fallback DC%d%s to %s:%d failed: %s", dc, mediaTag(isMedia), dst, port, compactConnError(err))
 		return false
 	}
 

@@ -10,6 +10,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
@@ -176,7 +177,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                         contentDescription = null,
                         modifier = Modifier
                             .size(180.dp)
-                            .clip(RoundedCornerShape(40.dp))
+                            .clip(CircleShape)
                             .clickable(
                                 interactionSource = logoInteractionSource,
                                 indication = null,
@@ -302,7 +303,7 @@ private fun ProxyStatusPanel(
             )
             ProxyStatusDivider()
             ProxyStatusItem(
-                text = stringResource(R.string.port_short, port),
+                text = stringResource(R.string.port_short, port.toIntOrNull() ?: 1443),
                 modifier = Modifier
                     .weight(1.35f)
                     .padding(horizontal = 6.dp, vertical = 8.dp)
