@@ -9,7 +9,7 @@
     <string name="copy">Скопировать</string>
     <string name="direct_mode">Прямое</string>
     <string name="pool_short">Пул x%1$d</string>
-    <string name="port_short">Порт %1$d</string>
+    <string name="port_short">Порт %1$s</string>
     <string name="theme">Тема</string>
     <string name="theme_system">Системная</string>
     <string name="theme_light">Светлая</string>

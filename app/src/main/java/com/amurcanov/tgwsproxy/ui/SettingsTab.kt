@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.ActivityNotFoundException
 import android.net.Uri
+import android.os.PowerManager
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
@@ -84,6 +85,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedDc5m by settingsStore.dc5m.collectAsStateWithLifecycle(initialValue = "")
     val savedDc203m by settingsStore.dc203m.collectAsStateWithLifecycle(initialValue = "")
     val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
+    val savedBindIp by settingsStore.bindIp.collectAsStateWithLifecycle(initialValue = "127.0.0.1")
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
@@ -118,6 +120,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
     var dc203mText by rememberSaveable(savedDc203m) { mutableStateOf(savedDc203m) }
 
     var portText by rememberSaveable(savedPort) { mutableStateOf(savedPort) }
+    var bindIpText by rememberSaveable(savedBindIp) { mutableStateOf(savedBindIp) }
     var selectedPoolSize by rememberSaveable(savedPoolSize) { mutableIntStateOf(savedPoolSize) }
     var cfEnabled by rememberSaveable(savedCfEnabled) { mutableStateOf(savedCfEnabled) }
     var customCfDomainEnabled by rememberSaveable(savedCustomDomainEnabled) { mutableStateOf(savedCustomDomainEnabled) }
@@ -143,7 +146,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
             settingsStore.saveAll(
                 isDcAuto, dc1Text, dc2Text, dc3Text, dc4Text, dc5Text, dc203Text,
                 dc1mText, dc2mText, dc3mText, dc4mText, dc5mText, dc203mText,
-                experimentalMode, portText, selectedPoolSize,
+                experimentalMode, bindIpText, portText, selectedPoolSize,
                 cfEnabled, customCfDomainEnabled, customCfDomain, secretKeyText
             )
         }
@@ -207,20 +210,63 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         fontWeight = FontWeight.SemiBold
                     )
                 }
-                OutlinedTextField(
-                    value = portText,
-                    onValueChange = { portText = it; scheduleSave() },
-                    label = { Text(stringResource(com.amurcanov.tgwsproxy.R.string.port)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                    )
+                Text(
+                    "IP и Порт",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 8.dp, bottom = 4.dp)
                 )
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                    color = androidx.compose.ui.graphics.Color.Transparent
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = bindIpText,
+                            onValueChange = { newValue ->
+                                bindIpText = newValue.filter { it.isDigit() || it == '.' }
+                                scheduleSave()
+                            },
+                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                        )
+                        
+                        Divider(
+                            modifier = Modifier.fillMaxHeight().width(1.dp).padding(vertical = 8.dp),
+                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        )
+                        
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = portText,
+                            onValueChange = { 
+                                val filtered = it.filter { char -> char.isDigit() }
+                                if (filtered.length <= 5) { 
+                                    portText = filtered
+                                    scheduleSave() 
+                                } 
+                            },
+                            modifier = Modifier.width(64.dp).padding(horizontal = 8.dp),
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            ),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                }
                 OutlinedButton(
                     onClick = { showIpSetupDialog = true },
                     enabled = !cfEnabled && !isRunning,
@@ -446,9 +492,7 @@ private fun IpSetupDialog(
     onDismiss: () -> Unit
 ) {
     val onIpChange = { newValue: String, update: (String) -> Unit ->
-        if (newValue.all { it.isDigit() || it == '.' }) {
-            update(newValue)
-        }
+        update(newValue.filter { it.isDigit() || it == '.' })
     }
 
     Dialog(

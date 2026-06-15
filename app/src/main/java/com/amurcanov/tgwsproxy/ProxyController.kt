@@ -24,6 +24,7 @@ object ProxyController {
             return false
         }
 
+        val bindIp = settingsStore.bindIp.first()
         val isExperimental = settingsStore.isExperimentalMode.first()
         val isDcAuto = settingsStore.isDcAuto.first()
         val poolSize = settingsStore.poolSize.first()
@@ -56,6 +57,7 @@ object ProxyController {
             context,
             Intent(context, ProxyService::class.java).apply {
                 action = ProxyService.ACTION_START
+                putExtra(ProxyService.EXTRA_BIND_IP, bindIp)
                 putExtra(ProxyService.EXTRA_PORT, port)
                 putExtra(ProxyService.EXTRA_IPS, parsedIps)
                 putExtra(ProxyService.EXTRA_POOL_SIZE, poolSize)

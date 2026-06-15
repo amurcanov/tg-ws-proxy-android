@@ -3,7 +3,7 @@
   # Telegram WS Proxy Android
 <br>
   <img src="https://img.shields.io/badge/Android-SDK_24--36-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android SDK">
-  <img src="https://img.shields.io/badge/Go-1.19_--_1.26-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go Version">
+  <img src="https://img.shields.io/badge/Rust-1.70+-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Version">
   <img src="https://img.shields.io/badge/Kotlin-Native-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin">
   <a href="https://github.com/amurcanov/tg-ws-proxy-android/stargazers">
     <img src="https://img.shields.io/github/stars/amurcanov/tg-ws-proxy-android?style=for-the-badge&logo=github&color=ffca28&labelColor=24292e" alt="Stars">
@@ -27,14 +27,6 @@
 - **Авто-обновления внутри приложения:** вручную проверять релизы больше не нужно — когда выйдет новая версия, приложение само покажет уведомление об обновлении.
 - **Раздел «Информация»:** внутри приложения есть расширенная справка по настройкам, особенностям CloudFlare, пулу WS-соединений и ручной конфигурации датацентров.
 
-## Что нового в версии 1.1.9
-
-* **Багфиксы и стабильность:** Улучшена стабильность ядра, исправлены ошибки автообновлений и работы в Direct-режиме. Удалён DataSync для предотвращения крашей на новых Android.
-* **Редизайн:** Слегка обновлена тёмная тема (добавлены орбы на фон), раздел «Инфо» стал информативнее.
-* **Автозапуск и быстрый доступ:** Добавлена опция автозапуска при загрузке системы и удобный тайл "T" в шторку уведомлений.
-* **Совместимость:** Сборка armeabi-v7a теперь использует Go 1.19 для лучшей работы на старых устройствах.
-* **CloudFlare CDN:** Улучшена логика работы с CF-доменами для стабильного подключения.
-
 ---
 
 ## Как это работает
@@ -43,7 +35,7 @@
 Telegram Android → Локальный MTProto (по умолчанию 127.0.0.1:1443) → TG WS Proxy → WSS (через CloudFlare или напрямую) → Telegram DC
 ```
 
-1. Приложение поднимает локальный MTProto-прокси средствами нативного движка на языке **Go**.
+1. Приложение поднимает локальный MTProto-прокси средствами нативного движка на языке **Rust**.
 2. Перехватывает подключения Telegram через локальный порт и сгенерированный секретный ключ.
 3. Извлекает `DC ID` из исходного пакета и устанавливает защищённое WebSocket (`TLS`) соединение с нужным датацентром, при необходимости проксируя трафик через CloudFlare.
 4. Использует пул соединений, keepalive-механику и fallback-сценарии для более устойчивой работы в реальных сетевых условиях.

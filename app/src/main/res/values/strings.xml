@@ -9,7 +9,7 @@
     <string name="copy">Copy</string>
     <string name="direct_mode">Direct</string>
     <string name="pool_short">Pool x%1$d</string>
-    <string name="port_short">Port %1$d</string>
+    <string name="port_short">Port %1$s</string>
     <string name="theme">Theme</string>
     <string name="theme_system">System</string>
     <string name="theme_light">Light</string>

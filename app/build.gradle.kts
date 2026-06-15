@@ -13,8 +13,8 @@ android {
         applicationId = "com.amurcanov.tgwsproxy"
         minSdk = 24
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.1.9"
+        versionCode = 121
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -22,7 +22,7 @@ android {
         }
         
         ndk {
-            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a", "x86_64"))
+            abiFilters.addAll(listOf("arm64-v8a", "armeabi-v7a"))
         }
     }
 
@@ -31,8 +31,8 @@ android {
         abi {
             isEnable = true
             reset()
-            include("arm64-v8a", "armeabi-v7a", "x86_64")
-            isUniversalApk = true  // Universal APK with all 3 architectures
+            include("arm64-v8a", "armeabi-v7a")
+            isUniversalApk = true  // Universal APK with all architectures
         }
     }
 

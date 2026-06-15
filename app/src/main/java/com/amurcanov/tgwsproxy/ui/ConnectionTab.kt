@@ -45,6 +45,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
 
     // Settings
     val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
+    val savedBindIp by settingsStore.bindIp.collectAsStateWithLifecycle(initialValue = "127.0.0.1")
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
@@ -95,7 +96,8 @@ fun ConnectionTab(settingsStore: SettingsStore) {
         val raw = savedSecretKey.trim()
         if (raw.isNotEmpty() && raw != "LOADING") raw else "00000000000000000000000000000000"
     }
-    val proxyUrl = "https://t.me/proxy?server=127.0.0.1&port=$port&secret=dd$secretForUrl"
+    val bindIp = savedBindIp.trim().takeIf { it.isNotEmpty() } ?: "127.0.0.1"
+    val proxyUrl = "https://t.me/proxy?server=$bindIp&port=$port&secret=dd$secretForUrl"
 
     val connectAction = {
         if (!isRunning && !isStarting) {

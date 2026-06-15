@@ -14,7 +14,6 @@ interface ProxyLibrary : Library {
     fun SetPoolSize(size: Int)
     fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
-    fun SetFakeTls(enabled: Int, domain: String)
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
     fun FreeString(p: Pointer)
@@ -43,10 +42,6 @@ object NativeProxy {
             if (priority) 1 else 0,
             userDomain
         )
-    }
-
-    fun setFakeTls(enabled: Boolean, domain: String = "") {
-        ProxyLibrary.INSTANCE.SetFakeTls(if (enabled) 1 else 0, domain)
     }
 
     /** Returns the full secret with correct prefix (dd or ee+domain_hex) */

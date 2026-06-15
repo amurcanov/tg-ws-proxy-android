@@ -33,6 +33,7 @@ class ProxyService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     // Saved intent extras for restart on kill / onTaskRemoved
+    private var lastBindIp: String = "127.0.0.1"
     private var lastPort: Int = 1443
     private var lastIps: String = ""
     private var lastPoolSize: Int = 4
@@ -45,6 +46,7 @@ class ProxyService : Service() {
         const val ACTION_START = "com.amurcanov.tgwsproxy.START"
         const val ACTION_STOP = "com.amurcanov.tgwsproxy.STOP"
         const val ACTION_RESTART = "com.amurcanov.tgwsproxy.RESTART"
+        const val EXTRA_BIND_IP = "EXTRA_BIND_IP"
         const val EXTRA_PORT = "EXTRA_PORT"
         const val EXTRA_IPS = "EXTRA_IPS"
         const val EXTRA_POOL_SIZE = "EXTRA_POOL_SIZE"
@@ -82,6 +84,7 @@ class ProxyService : Service() {
         when (intent?.action) {
             ACTION_START -> {
                 LogManager.clearLogs()
+                val bindIp = intent.getStringExtra(EXTRA_BIND_IP) ?: "127.0.0.1"
                 val port = intent.getIntExtra(EXTRA_PORT, 1443)
                 val ips = intent.getStringExtra(EXTRA_IPS) ?: ""
                 val poolSize = intent.getIntExtra(EXTRA_POOL_SIZE, 4)
@@ -89,7 +92,7 @@ class ProxyService : Service() {
                 val cfPriority = intent.getBooleanExtra(EXTRA_CFPROXY_PRIORITY, true)
                 val cfDomain = intent.getStringExtra(EXTRA_CFPROXY_DOMAIN) ?: ""
                 val secretKey = intent.getStringExtra(EXTRA_SECRET_KEY) ?: ""
-                startProxy(port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
+                startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey)
             }
             ACTION_STOP -> {
                 stopProxy()
@@ -102,7 +105,7 @@ class ProxyService : Service() {
                 // If we had saved params, try to restart
                 if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
                     Log.w(TAG, "Service restarted by system, re-starting proxy")
-                    startProxy(lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey)
+                    startProxy(lastBindIp, lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey)
                 } else {
                     stopSelf()
                 }
@@ -113,12 +116,13 @@ class ProxyService : Service() {
         return START_REDELIVER_INTENT
     }
 
-    private fun startProxy(port: Int, ips: String, poolSize: Int = 4,
+    private fun startProxy(bindIp: String, port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "") {
         if (_isRunning.value || stopInProgress) return
 
         // Save params for restart
+        lastBindIp = bindIp
         lastPort = port
         lastIps = ips
         lastPoolSize = poolSize
@@ -150,7 +154,7 @@ class ProxyService : Service() {
                 NativeProxy.setPoolSize(poolSize)
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
-                val result = NativeProxy.startProxy("127.0.0.1", port, ips, secretKey, 1)
+                val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
                 if (result != 0) {
                     Log.e(TAG, "StartProxy returned error code: $result")
                     serviceScope.launch {
@@ -179,7 +183,7 @@ class ProxyService : Service() {
             delay(STARTUP_CHECK_DELAY_MS)
             if (_isRunning.value) {
                 val isListening = withContext(Dispatchers.IO) {
-                    isPortOpen("127.0.0.1", port, 2000)
+                    isPortOpen(bindIp, port, 2000)
                 }
                 if (isListening) {
                     updateNotification(getString(R.string.notification_running), force = true)
@@ -277,6 +281,7 @@ class ProxyService : Service() {
             delay(350)
 
             startProxy(
+                bindIp = lastBindIp,
                 port = lastPort,
                 ips = lastIps,
                 poolSize = lastPoolSize,
