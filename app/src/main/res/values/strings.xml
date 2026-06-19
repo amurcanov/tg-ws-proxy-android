@@ -126,4 +126,17 @@
     <string name="interval_48h">48 h</string>
     <string name="interval_never">Never</string>
     <string name="interval_hours">%1$d h</string>
+
+    <!-- Hardcoded string fixes -->
+    <string name="apply_mode_packages">Packages</string>
+    <string name="apply_mode_link">Link</string>
+    <string name="telegram_clients_not_found">No Telegram clients found</string>
+    <string name="error_opening_client">Error opening client</string>
+    <string name="choose_client">Choose client</string>
+    <string name="error_selecting_client">Error selecting client</string>
+    <string name="ip_and_port">IP and Port</string>
+    <string name="help_cloudflare_title">CloudFlare CDN</string>
+    <string name="hero_fork_label">Amurcanov Fork</string>
+    <string name="hero_base_label">Flowseal Base</string>
+    <string name="language_selector_title">Language</string>
 </resources>

@@ -452,7 +452,7 @@ fun InfoTab(settingsStore: SettingsStore) {
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                         HelpSection(
-                            title = "CloudFlare CDN",
+                            title = stringResource(R.string.help_cloudflare_title),
                             text = stringResource(R.string.help_cloudflare_text)
                         )
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -563,13 +563,13 @@ private fun InfoHeroCard(onSupportClick: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     HeroMetaPill(
-                        text = "Amurcanov Fork",
+                        text = stringResource(R.string.hero_fork_label),
                         containerColor = glassColor,
                         borderColor = glassBorder,
                         modifier = Modifier.weight(1f)
                     )
                     HeroMetaPill(
-                        text = "Flowseal Base",
+                        text = stringResource(R.string.hero_base_label),
                         containerColor = colors.primary.copy(alpha = if (isDark) 0.18f else 0.10f),
                         borderColor = colors.primary.copy(alpha = if (isDark) 0.22f else 0.14f),
                         modifier = Modifier.weight(1f)
@@ -578,7 +578,7 @@ private fun InfoHeroCard(onSupportClick: () -> Unit) {
 
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Telegram WS Proxy",
+                        text = stringResource(R.string.app_name),
                         style = MaterialTheme.typography.headlineSmall.copy(
                             fontWeight = FontWeight.Black,
                             fontSize = 30.sp,

@@ -74,7 +74,7 @@ class ProxyTileService : TileService() {
 
     private fun renderTile(overrideState: Int? = null) {
         qsTile?.apply {
-            label = "Telegram WS Proxy"
+            label = getString(R.string.app_name)
             icon = Icon.createWithResource(this@ProxyTileService, R.drawable.ic_qs_proxy_t)
             state = overrideState ?: if (ProxyService.isRunning.value) {
                 Tile.STATE_ACTIVE

@@ -241,7 +241,7 @@ fun FloatingToolbar(
                     val activity = LocalContext.current as? android.app.Activity
                     
                     Text(
-                        "Language / Язык",
+                        stringResource(R.string.language_selector_title),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(bottom = 6.dp, start = 4.dp)
@@ -260,6 +260,15 @@ fun FloatingToolbar(
                         selected = currentLang == "en",
                         onClick = {
                             prefs.edit().putString("app_language", "en").apply()
+                            activity?.recreate()
+                            isExpanded = false
+                        }
+                    )
+                    ThemeOption(
+                        label = "中文",
+                        selected = currentLang == "zh",
+                        onClick = {
+                            prefs.edit().putString("app_language", "zh").apply()
                             activity?.recreate()
                             isExpanded = false
                         }
