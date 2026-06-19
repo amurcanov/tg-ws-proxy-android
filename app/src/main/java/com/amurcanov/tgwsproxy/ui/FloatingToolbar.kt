@@ -247,7 +247,7 @@ fun FloatingToolbar(
                         modifier = Modifier.padding(bottom = 6.dp, start = 4.dp)
                     )
                     ThemeOption(
-                        label = "Русский",
+                        label = stringResource(R.string.language_russian),
                         selected = currentLang == "ru",
                         onClick = {
                             prefs.edit().putString("app_language", "ru").apply()
@@ -256,7 +256,7 @@ fun FloatingToolbar(
                         }
                     )
                     ThemeOption(
-                        label = "English",
+                        label = stringResource(R.string.language_english),
                         selected = currentLang == "en",
                         onClick = {
                             prefs.edit().putString("app_language", "en").apply()
@@ -265,7 +265,7 @@ fun FloatingToolbar(
                         }
                     )
                     ThemeOption(
-                        label = "中文",
+                        label = stringResource(R.string.language_chinese),
                         selected = currentLang == "zh",
                         onClick = {
                             prefs.edit().putString("app_language", "zh").apply()

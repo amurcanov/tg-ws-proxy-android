@@ -1161,7 +1161,7 @@ private fun DonateDialog(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_yoomoney),
-                        contentDescription = "ЮMoney",
+                        contentDescription = stringResource(R.string.content_description_yumoney),
                         tint = Color.Unspecified,
                         modifier = Modifier
                             .width(126.dp)
@@ -1178,7 +1178,7 @@ private fun DonateDialog(
                 ) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_crypto_wordmark),
-                        contentDescription = "Crypto",
+                        contentDescription = stringResource(R.string.content_description_crypto),
                         tint = Color.Unspecified,
                         modifier = Modifier
                             .width(138.dp)

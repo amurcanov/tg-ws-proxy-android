@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Telegram WS 代理</string>
+    <string name="app_name">Telegram WS Proxy</string>
     <string name="status_connecting">连接中</string>
     <string name="status_connected">已连接</string>
     <string name="status_disconnected">已断开</string>
@@ -139,4 +139,9 @@
     <string name="hero_fork_label">Amurcanov 分支</string>
     <string name="hero_base_label">Flowseal 原版</string>
     <string name="language_selector_title">语言</string>
+    <string name="language_russian">Русский</string>
+    <string name="language_english">English</string>
+    <string name="language_chinese">中文</string>
+    <string name="content_description_yumoney">ЮMoney</string>
+    <string name="content_description_crypto">Crypto</string>
 </resources>
