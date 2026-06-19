@@ -238,12 +238,12 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             ModeChip(
-                                label = "Пакеты",
+                                label = stringResource(R.string.apply_mode_packages),
                                 selected = applyMode == "packages",
                                 modifier = Modifier.weight(1f).height(48.dp)
                             ) { applyMode = "packages" }
                             ModeChip(
-                                label = "Ссылка",
+                                label = stringResource(R.string.apply_mode_link),
                                 selected = applyMode == "link",
                                 modifier = Modifier.weight(1f).height(48.dp)
                             ) { applyMode = "link" }
@@ -436,7 +436,7 @@ private fun applyToTelegramPackages(context: Context, url: String) {
     }
 
     if (availablePackages.isEmpty()) {
-        Toast.makeText(context, "Клиенты не найдены", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, context.getString(R.string.telegram_clients_not_found), Toast.LENGTH_SHORT).show()
         return
     }
 
@@ -453,16 +453,16 @@ private fun applyToTelegramPackages(context: Context, url: String) {
         try {
             context.startActivity(intent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Ошибка при открытии клиента", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.error_opening_client), Toast.LENGTH_SHORT).show()
         }
     } else {
-        val chooserIntent = Intent.createChooser(targetedIntents.first(), "Выберите клиент")
+        val chooserIntent = Intent.createChooser(targetedIntents.first(), context.getString(R.string.choose_client))
         chooserIntent.putExtra(Intent.EXTRA_INITIAL_INTENTS, targetedIntents.drop(1).toTypedArray())
         chooserIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         try {
             context.startActivity(chooserIntent)
         } catch (e: Exception) {
-            Toast.makeText(context, "Ошибка при выборе клиента", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.error_selecting_client), Toast.LENGTH_SHORT).show()
         }
     }
 }

@@ -481,7 +481,7 @@ class ProxyService : Service() {
         )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Telegram WS Proxy")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(content)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(openPendingIntent) // Tap notification → open app
