@@ -12,11 +12,15 @@ import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
+import android.widget.Toast
+import androidx.annotation.UiThread
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.Socket
 
 class ProxyService : Service() {
@@ -116,6 +120,20 @@ class ProxyService : Service() {
         return START_REDELIVER_INTENT
     }
 
+    private fun isPortAvailable(bindIp: String, port: Int): Boolean {
+        return try {
+            ServerSocket().use { socket ->
+                socket.reuseAddress = true
+                socket.bind(InetSocketAddress(InetAddress.getByName(bindIp), port))
+                true
+            }
+        } catch (_: Exception) {
+            // (Если надо, то тут может быть IOException или SecurityException) (IOException добавляет новый import так что "_", по-моему, лучше)
+            return false;
+        }
+    }
+
+
     private fun startProxy(bindIp: String, port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "") {
@@ -150,6 +168,17 @@ class ProxyService : Service() {
         
         // Start Go proxy in a separate thread with error handling
         Thread({
+            val canObtainPort = isPortAvailable(bindIp, port)
+            if (!canObtainPort) {
+                val str = getString(R.string.port_is_not_available, port)
+                serviceScope.launch(Dispatchers.Main) {
+                    Toast.makeText(this@ProxyService, str, Toast.LENGTH_SHORT).show()
+                    updateNotification(str, force = true)
+                    stopProxy()
+                }
+                return@Thread
+            }
+
             try {
                 NativeProxy.setPoolSize(poolSize)
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)

@@ -126,4 +126,5 @@
     <string name="interval_48h">48 ч</string>
     <string name="interval_never">Никогда</string>
     <string name="interval_hours">%1$d ч</string>
+    <string name="port_is_not_available">"Порт %1$d используется, пожалуйста попробуйте другой "</string>
 </resources>
