@@ -65,10 +65,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -142,6 +146,7 @@ fun InfoTab(settingsStore: SettingsStore) {
     val updateLastError by settingsStore.updateLastError.collectAsStateWithLifecycle(initialValue = "")
     val currentLogs by LogManager.logs.collectAsStateWithLifecycle()
     val currentVersion = remember { "v${BuildConfig.VERSION_NAME.removePrefix("v")}" }
+    val scrollState = rememberScrollState()
     val updateStatusSubtitle = when {
         isCheckingUpdates -> stringResource(R.string.update_checking)
         updateLatestVersion.isNotBlank() && isNewerVersion(currentVersion, updateLatestVersion) ->
@@ -160,14 +165,32 @@ fun InfoTab(settingsStore: SettingsStore) {
         context = context
     )
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 28.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, top = 0.dp, bottom = 4.dp)
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithContent {
+                    drawContent()
+                    val fadeHeight = 32.dp.toPx()
+                    val fadeFraction = (fadeHeight / size.height).coerceIn(0f, 0.5f)
+                    drawRect(
+                        brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                            colorStops = arrayOf(
+                                0f to if (scrollState.canScrollBackward) Color.Transparent else Color.Black,
+                                fadeFraction to Color.Black,
+                                1f - fadeFraction to Color.Black,
+                                1f to if (scrollState.canScrollForward) Color.Transparent else Color.Black
+                            )
+                        ),
+                        blendMode = BlendMode.DstIn
+                    )
+                }
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -181,9 +204,9 @@ fun InfoTab(settingsStore: SettingsStore) {
             )
         }
 
-        InfoHeroCard(onSupportClick = { showDonateDialog = true })
+            InfoHeroCard(onSupportClick = { showDonateDialog = true })
 
-        ExpandableSectionCard(
+            ExpandableSectionCard(
             title = stringResource(R.string.actions),
             itemCount = stringResource(R.string.items_count, 4),
             expanded = actionsExpanded,
@@ -370,7 +393,9 @@ fun InfoTab(settingsStore: SettingsStore) {
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(4.dp))
+
+        }
 
     }
 
