@@ -73,6 +73,8 @@ class ProxyService : Service() {
 
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning
+        private val _isVerifiedRunning = MutableStateFlow(false)
+        val isVerifiedRunning: StateFlow<Boolean> = _isVerifiedRunning
     }
 
     override fun onCreate() {
@@ -186,6 +188,7 @@ class ProxyService : Service() {
                     isPortOpen(bindIp, port, 2000)
                 }
                 if (isListening) {
+                    _isVerifiedRunning.value = true
                     updateNotification(getString(R.string.notification_running), force = true)
                     Log.i(TAG, "Proxy verified: listening on port $port")
                 } else {
@@ -436,6 +439,9 @@ class ProxyService : Service() {
 
     private fun updateRunningState(isRunning: Boolean) {
         _isRunning.value = isRunning
+        if (!isRunning) {
+            _isVerifiedRunning.value = false
+        }
         ProxyTileService.requestSync(this)
     }
 

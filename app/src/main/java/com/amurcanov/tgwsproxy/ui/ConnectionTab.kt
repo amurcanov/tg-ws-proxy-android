@@ -22,9 +22,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -37,13 +41,13 @@ import com.amurcanov.tgwsproxy.ProxyController
 import com.amurcanov.tgwsproxy.ProxyService
 import com.amurcanov.tgwsproxy.SettingsStore
 import com.amurcanov.tgwsproxy.R
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
 fun ConnectionTab(settingsStore: SettingsStore) {
     val context = LocalContext.current
     val isRunning by ProxyService.isRunning.collectAsStateWithLifecycle()
+    val isVerifiedRunning by ProxyService.isVerifiedRunning.collectAsStateWithLifecycle()
 
     val isReady by settingsStore.isReady.collectAsStateWithLifecycle(initialValue = false)
 
@@ -80,17 +84,13 @@ fun ConnectionTab(settingsStore: SettingsStore) {
 
     var isStarting by remember { mutableStateOf(false) }
     val statusText = when {
-        isStarting -> stringResource(R.string.status_connecting)
-        isRunning -> stringResource(R.string.status_connected)
+        isVerifiedRunning -> stringResource(R.string.status_connected)
+        isStarting || isRunning -> stringResource(R.string.status_connecting)
         else -> stringResource(R.string.status_disconnected)
     }
 
-    LaunchedEffect(isRunning) {
-        if (isRunning) {
-            delay(600)
-            isStarting = false
-        }
-        if (!isRunning) {
+    LaunchedEffect(isRunning, isVerifiedRunning) {
+        if (isVerifiedRunning || !isRunning) {
             isStarting = false
         }
     }
@@ -132,9 +132,18 @@ fun ConnectionTab(settingsStore: SettingsStore) {
         animationSpec = tween(durationMillis = 650, easing = CubicBezierEasing(0.22f, 1f, 0.36f, 1f)),
         label = "logo_scale"
     )
+    val verifiedReveal by animateFloatAsState(
+        targetValue = if (isVerifiedRunning) 1f else 0f,
+        animationSpec = if (isVerifiedRunning) {
+            tween(durationMillis = 620, easing = FastOutSlowInEasing)
+        } else {
+            snap()
+        },
+        label = "verified_logo_reveal"
+    )
     val logoInteractionSource = remember { MutableInteractionSource() }
     val statusColor by animateColorAsState(
-        targetValue = if (isActiveVisual) {
+        targetValue = if (isVerifiedRunning) {
             MaterialTheme.colorScheme.primary
         } else {
             MaterialTheme.colorScheme.onSurfaceVariant
@@ -179,9 +188,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.ic_telegram_logo),
-                        contentDescription = null,
+                    Box(
                         modifier = Modifier
                             .size(180.dp)
                             .clip(RoundedCornerShape(40.dp))
@@ -190,10 +197,38 @@ fun ConnectionTab(settingsStore: SettingsStore) {
                                 indication = null,
                                 onClick = if (isActiveVisual) disconnectAction else connectAction
                             )
-                            .scale(logoScale),
-                        colorFilter = if (isActiveVisual) null else ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
-                        alpha = if (isActiveVisual) 1f else 0.52f
-                    )
+                            .scale(logoScale)
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_telegram_logo),
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) }),
+                            alpha = 0.52f
+                        )
+                        Image(
+                            painter = painterResource(id = R.drawable.ic_telegram_logo),
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .drawWithContent {
+                                    if (verifiedReveal > 0f) {
+                                        val radius = maxOf(size.width, size.height) * verifiedReveal
+                                        val revealPath = Path().apply {
+                                            addOval(
+                                                Rect(
+                                                    left = center.x - radius,
+                                                    top = center.y - radius,
+                                                    right = center.x + radius,
+                                                    bottom = center.y + radius
+                                                )
+                                            )
+                                        }
+                                        clipPath(revealPath) { this@drawWithContent.drawContent() }
+                                    }
+                                }
+                        )
+                    }
                     Text(
                         text = statusText,
                         style = MaterialTheme.typography.bodyMedium,
