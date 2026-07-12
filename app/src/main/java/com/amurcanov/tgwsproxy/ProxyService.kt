@@ -18,16 +18,11 @@ import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
 
 class ProxyService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private var statsJob: Job? = null
-    private var watchdogJob: Job? = null
     private var restartJob: Job? = null
     private var lastNotificationContent: String = ""
     private var lastNotificationAtMs: Long = 0L
@@ -72,11 +67,10 @@ class ProxyService : Service() {
         private const val NOTIFICATION_MIN_UPDATE_MS = 3_000L
         private const val NATIVE_STOP_WAIT_MS = 3_000L
 
-        // Startup verification timeout
-        private const val STARTUP_CHECK_DELAY_MS = 3000L
-
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning
+        private val _isVerifiedRunning = MutableStateFlow(false)
+        val isVerifiedRunning: StateFlow<Boolean> = _isVerifiedRunning
     }
 
     override fun onCreate() {
@@ -138,6 +132,7 @@ class ProxyService : Service() {
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "") {
         if (_isRunning.value || stopInProgress) return
+        _isVerifiedRunning.value = false
 
         // Save params for restart
         lastBindIp = bindIp
@@ -184,7 +179,16 @@ class ProxyService : Service() {
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
-                if (result != 0) {
+                if (result == 0) {
+                    serviceScope.launch {
+                        if (!stopInProgress) {
+                            updateRunningState(true)
+                            _isVerifiedRunning.value = true
+                            updateNotification(getString(R.string.notification_running), force = true)
+                            Log.i(TAG, "Proxy ready: listening on port $port")
+                        }
+                    }
+                } else {
                     Log.e(TAG, "StartProxy returned error code: $result")
                     serviceScope.launch {
                         updateNotification(getString(R.string.notification_start_error_code, result), force = true)
@@ -205,26 +209,7 @@ class ProxyService : Service() {
             start()
         }
 
-        updateRunningState(true)
-
-        // Watchdog: verify the proxy is actually listening after startup
-        watchdogJob = serviceScope.launch {
-            delay(STARTUP_CHECK_DELAY_MS)
-            if (_isRunning.value) {
-                val isListening = withContext(Dispatchers.IO) {
-                    isPortOpen(bindIp, port, 2000)
-                }
-                if (isListening) {
-                    updateNotification(getString(R.string.notification_running), force = true)
-                    Log.i(TAG, "Proxy verified: listening on port $port")
-                } else {
-                    Log.e(TAG, "Proxy NOT listening on port $port after ${STARTUP_CHECK_DELAY_MS}ms")
-                    updateNotification(getString(R.string.notification_not_responding), force = true)
                     // Don't stop — it might start slightly later; let the user decide
-                }
-            }
-        }
-
         // Stats updater. Notification updates are throttled so the system keeps
         // a stable foreground entry instead of constantly reordering it.
         statsJob = serviceScope.launch {
@@ -257,20 +242,6 @@ class ProxyService : Service() {
         }
     }
 
-    /**
-     * Check if a TCP port is reachable (used to verify proxy startup)
-     */
-    private fun isPortOpen(host: String, port: Int, timeoutMs: Int): Boolean {
-        return try {
-            Socket().use { socket ->
-                socket.connect(InetSocketAddress(host, port), timeoutMs)
-                true
-            }
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     private fun updateNotification(content: String, force: Boolean = false) {
         val now = System.currentTimeMillis()
         if (!force) {
@@ -299,8 +270,6 @@ class ProxyService : Service() {
             Log.i(TAG, "Restarting proxy from notification")
             updateNotification(getString(R.string.notification_restarting), force = true)
 
-            watchdogJob?.cancel()
-            watchdogJob = null
             statsJob?.cancel()
             statsJob = null
 
@@ -353,8 +322,6 @@ class ProxyService : Service() {
         stopInProgress = true
         restartJob?.cancel()
         restartJob = null
-        watchdogJob?.cancel()
-        watchdogJob = null
         statsJob?.cancel()
         statsJob = null
         serviceScope.launch {
@@ -465,6 +432,9 @@ class ProxyService : Service() {
 
     private fun updateRunningState(isRunning: Boolean) {
         _isRunning.value = isRunning
+        if (!isRunning) {
+            _isVerifiedRunning.value = false
+        }
         ProxyTileService.requestSync(this)
     }
 
@@ -531,8 +501,6 @@ class ProxyService : Service() {
     override fun onDestroy() {
         restartJob?.cancel()
         restartJob = null
-        watchdogJob?.cancel()
-        watchdogJob = null
         statsJob?.cancel()
         statsJob = null
         releaseWakeLock()
