@@ -127,4 +127,13 @@
     <string name="interval_never">هرگز</string>
     <string name="interval_hours">%1$d ساعت</string>
     <string name="port_is_not_available">پورت %1$d در حال استفاده است، لطفاً یکی دیگر را امتحان کن</string>
+    <string name="tls_fragment">تکه‌تکه کردن TLS (ضدِ DPI)</string>
+    <string name="tls_fragment_desc">ClientHello مربوط به TLS را می‌شکند تا فیلترینگ مبتنی بر SNI نتواند دامنه را تشخیص دهد</string>
+    <string name="battery_unrestrict">نادیده گرفتن بهینه‌سازی باتری</string>
+    <string name="battery_unrestrict_desc">کمک می‌کند پروکسی در پس‌زمینه زنده بماند</string>
+    <string name="battery_action">اجازه بده</string>
+    <string name="reachability_title">تست دسترسی به تلگرام</string>
+    <string name="reachability_desc">تأخیر مستقیم تا دیتاسنترهای تلگرام</string>
+    <string name="reachability_run">تست</string>
+    <string name="reachability_running">در حال تست…</string>
 </resources>

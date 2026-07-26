@@ -1,0 +1,11 @@
+# Rust
+/target
+
+# Android / Gradle
+/.gradle
+/build
+/app/build
+/app/release
+/captures
+*.apk
+release.keystore

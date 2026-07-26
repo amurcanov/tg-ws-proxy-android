@@ -31,6 +31,7 @@ object ProxyController {
         val cfEnabled = settingsStore.cfproxyEnabled.first()
         val customCfDomainEnabled = settingsStore.customCfDomainEnabled.first()
         val customCfDomain = settingsStore.customCfDomain.first().trim()
+        val tlsFragment = settingsStore.tlsFragmentEnabled.first()
         val secretKey = ensureSecretKey(settingsStore)
 
         val parsedIps = buildList {
@@ -68,6 +69,7 @@ object ProxyController {
                     if (customCfDomainEnabled && cfEnabled) customCfDomain else ""
                 )
                 putExtra(ProxyService.EXTRA_SECRET_KEY, secretKey)
+                putExtra(ProxyService.EXTRA_TLS_FRAGMENT, tlsFragment)
             }
         )
         ProxyTileService.requestSync(context)

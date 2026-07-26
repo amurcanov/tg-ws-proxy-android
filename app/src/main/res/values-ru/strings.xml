@@ -127,4 +127,13 @@
     <string name="interval_never">Никогда</string>
     <string name="interval_hours">%1$d ч</string>
     <string name="port_is_not_available">"Порт %1$d используется, пожалуйста попробуйте другой "</string>
+    <string name="tls_fragment">Фрагментация TLS (анти-DPI)</string>
+    <string name="tls_fragment_desc">Разбивает TLS ClientHello, чтобы фильтрация по SNI не находила домен</string>
+    <string name="battery_unrestrict">Отключить оптимизацию батареи</string>
+    <string name="battery_unrestrict_desc">Помогает удерживать прокси в фоне</string>
+    <string name="battery_action">Разрешить</string>
+    <string name="reachability_title">Тест доступности Telegram</string>
+    <string name="reachability_desc">Прямая задержка до датацентров Telegram</string>
+    <string name="reachability_run">Тест</string>
+    <string name="reachability_running">Проверка…</string>
 </resources>

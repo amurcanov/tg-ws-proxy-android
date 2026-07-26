@@ -53,6 +53,12 @@ impl Default for Cfproxy429State {
     }
 }
 
+// TLS ClientHello fragmentation (anti-DPI). When enabled, the first bytes
+// written on the raw TCP socket (which carry the TLS ClientHello including the
+// SNI) are split into several small TCP segments so SNI-based DPI cannot match
+// the hostname inside a single packet.
+pub static TLS_FRAGMENT: AtomicBool = AtomicBool::new(false);
+
 // Cloudflare proxy config
 pub static CFPROXY_ENABLED: AtomicBool = AtomicBool::new(true);
 
