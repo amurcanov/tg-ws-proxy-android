@@ -1,0 +1,127 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main, "claude/**" ]
+    paths-ignore:
+      - "README.md"
+      - "LICENSE"
+      - "**/*.md"
+  pull_request:
+    paths-ignore:
+      - "README.md"
+      - "LICENSE"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  NDK_VERSION: "27.2.12479018"
+
+jobs:
+  build:
+    name: Build release APKs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK components (platform, build-tools, NDK)
+        run: |
+          sdkmanager --install \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "ndk;${NDK_VERSION}"
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked
+
+      - name: Build native libraries (Rust)
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/${{ env.NDK_VERSION }}
+        run: |
+          cargo ndk -t arm64-v8a   --platform 24 -o app/src/main/jniLibs build --release
+          cargo ndk -t armeabi-v7a --platform 21 -o app/src/main/jniLibs build --release
+          echo "Built native libraries:"
+          find app/src/main/jniLibs -name "*.so" -exec ls -la {} \;
+
+      - name: Configure signing and local.properties
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Using keystore from repository secrets."
+            echo "$KEYSTORE_BASE64" | base64 -d > release.keystore
+            KS_PASS="$KEYSTORE_PASSWORD"
+            KS_ALIAS="$KEY_ALIAS"
+            KS_KEYPASS="$KEY_PASSWORD"
+          else
+            echo "No keystore secret found — generating an ephemeral keystore for CI."
+            KS_PASS="android"
+            KS_ALIAS="tgwsproxy"
+            KS_KEYPASS="android"
+            keytool -genkeypair -v \
+              -keystore release.keystore \
+              -storepass "$KS_PASS" \
+              -keypass "$KS_KEYPASS" \
+              -alias "$KS_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=TG WS Proxy CI, OU=CI, O=CI, L=CI, ST=CI, C=US"
+          fi
+          {
+            echo "sdk.dir=$ANDROID_HOME"
+            echo "KEYSTORE_FILE=../release.keystore"
+            echo "KEYSTORE_PASSWORD=$KS_PASS"
+            echo "KEY_ALIAS=$KS_ALIAS"
+            echo "KEY_PASSWORD=$KS_KEYPASS"
+          } > local.properties
+
+      - name: Build release APKs
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Collect APKs
+        run: |
+          mkdir -p artifacts
+          find app/build/outputs/apk -name "*.apk" -exec cp {} artifacts/ \;
+          echo "Collected APKs:"
+          ls -la artifacts
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tg-ws-proxy-apks
+          path: artifacts/*.apk
+          if-no-files-found: error
+          retention-days: 30
