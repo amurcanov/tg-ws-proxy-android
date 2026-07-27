@@ -48,7 +48,7 @@ class ProxyService : Service() {
     // Watchdog state: detect a stalled route (active sessions but no traffic
     // movement) and auto-restart, which automates the manual "restart the
     // proxy if it hangs" workaround.
-    private var wdLastBytes: Long = -1L
+    private var wdLastBytes: Double = -1.0
     private var wdStallTicks: Int = 0
     private var wdLastRestartAtMs: Long = 0L
     private var wdRestartCount: Int = 0
@@ -273,7 +273,7 @@ class ProxyService : Service() {
      * route is likely stuck (not a crash). Auto-restart it, with a minimum gap
      * and a cap on consecutive attempts so it never restart-loops.
      */
-    private fun maybeRunWatchdog(totalBytes: Long, active: Int) {
+    private fun maybeRunWatchdog(totalBytes: Double, active: Int) {
         if (!_isVerifiedRunning.value || stopInProgress || active <= 0) {
             // No active sessions (or not verified) → not a stall. Reset baseline.
             wdStallTicks = 0
@@ -297,7 +297,7 @@ class ProxyService : Service() {
             wdRestartCount < WATCHDOG_MAX_RESTARTS
         ) {
             wdStallTicks = 0
-            wdLastBytes = -1L
+            wdLastBytes = -1.0
             wdLastRestartAtMs = now
             wdRestartCount++
             Log.w(TAG, "Watchdog: traffic stalled with active sessions, auto-restarting (attempt $wdRestartCount)")
