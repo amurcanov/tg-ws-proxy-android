@@ -40,6 +40,8 @@ class SettingsStore(private val context: Context) {
         val CUSTOM_CF_DOMAIN_ENABLED = booleanPreferencesKey("custom_cf_domain_enabled")
         val CUSTOM_CF_DOMAIN = stringPreferencesKey("custom_cf_domain")
         val AUTO_START_ON_BOOT = booleanPreferencesKey("auto_start_on_boot")
+        val TLS_FRAGMENT_MODE = intPreferencesKey("tls_fragment_mode")
+        val CF_AUTO_MODE = booleanPreferencesKey("cf_auto_mode")
         val SECRET_KEY = stringPreferencesKey("secret_key")
         val LOG_SHOW_DEBUG = booleanPreferencesKey("log_show_debug")
         val LOG_SHOW_INFO = booleanPreferencesKey("log_show_info")
@@ -86,6 +88,8 @@ class SettingsStore(private val context: Context) {
     val customCfDomainEnabled: Flow<Boolean> = context.dataStore.data.map { it[Keys.CUSTOM_CF_DOMAIN_ENABLED] ?: false }
     val customCfDomain: Flow<String> = context.dataStore.data.map { it[Keys.CUSTOM_CF_DOMAIN] ?: "" }
     val autoStartOnBoot: Flow<Boolean> = context.dataStore.data.map { it[Keys.AUTO_START_ON_BOOT] ?: false }
+    val tlsFragmentMode: Flow<Int> = context.dataStore.data.map { it[Keys.TLS_FRAGMENT_MODE] ?: 0 }
+    val cfAutoMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.CF_AUTO_MODE] ?: false }
     val secretKey: Flow<String> = context.dataStore.data.map { it[Keys.SECRET_KEY] ?: "" }
 
     val logShowDebug: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_DEBUG] ?: false }
@@ -145,6 +149,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveAutoStartOnBoot(enabled: Boolean) {
         context.dataStore.edit { it[Keys.AUTO_START_ON_BOOT] = enabled }
+    }
+
+    suspend fun saveTlsFragmentMode(mode: Int) {
+        context.dataStore.edit { it[Keys.TLS_FRAGMENT_MODE] = mode.coerceIn(0, 3) }
+    }
+
+    suspend fun saveCfAutoMode(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.CF_AUTO_MODE] = enabled }
     }
 
     suspend fun saveUpdatePostpone(version: String, until: Long) {

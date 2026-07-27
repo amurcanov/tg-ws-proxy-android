@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.BatteryAlert
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -91,6 +94,8 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
     val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
+    val tlsFragmentMode by settingsStore.tlsFragmentMode.collectAsStateWithLifecycle(initialValue = 0)
+    val cfAutoMode by settingsStore.cfAutoMode.collectAsStateWithLifecycle(initialValue = false)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
 
     if (!isReady) {
@@ -439,6 +444,189 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         scope.launch { settingsStore.saveAutoStartOnBoot(enabled) }
                     }
                 )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            // Auto route selection: probe direct vs Cloudflare and pick on start
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Cloud, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.cf_auto),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.cf_auto_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = cfAutoMode,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveCfAutoMode(enabled) }
+                    }
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            // TLS ClientHello fragmentation (anti-DPI) — strength presets
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Shield, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.tls_fragment),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.tls_fragment_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                val fragLabels = listOf(
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_off),
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_light),
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_medium),
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_aggressive)
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    fragLabels.forEachIndexed { idx, label ->
+                        PoolChip(
+                            label = label,
+                            selected = tlsFragmentMode == idx,
+                            modifier = Modifier.weight(1f),
+                            onClick = { scope.launch { settingsStore.saveTlsFragmentMode(idx) } }
+                        )
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            // Battery optimization exemption
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.BatteryAlert, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.battery_unrestrict),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.battery_unrestrict_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                FilledTonalButton(onClick = {
+                    com.amurcanov.tgwsproxy.ConnectivityTools.requestIgnoreBatteryOptimizations(context)
+                }) {
+                    Text(stringResource(com.amurcanov.tgwsproxy.R.string.battery_action))
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            // Telegram reachability / latency test
+            var probeRunning by remember { mutableStateOf(false) }
+            var probeResult by remember { mutableStateOf("") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.NetworkCheck, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.reachability_title),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (probeResult.isNotEmpty()) probeResult
+                            else stringResource(com.amurcanov.tgwsproxy.R.string.reachability_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                FilledTonalButton(
+                    enabled = !probeRunning,
+                    onClick = {
+                        probeRunning = true
+                        scope.launch {
+                            val results = com.amurcanov.tgwsproxy.ConnectivityTools.probeTelegram()
+                            probeResult = results.joinToString("   ") { r ->
+                                if (r.reachable) "${r.name} · ${r.latencyMs}ms" else "${r.name} · ✗"
+                            }
+                            probeRunning = false
+                        }
+                    }
+                ) {
+                    Text(
+                        if (probeRunning) stringResource(com.amurcanov.tgwsproxy.R.string.reachability_running)
+                        else stringResource(com.amurcanov.tgwsproxy.R.string.reachability_run)
+                    )
+                }
             }
         }
 

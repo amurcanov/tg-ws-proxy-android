@@ -127,4 +127,19 @@
     <string name="interval_never">Never</string>
     <string name="interval_hours">%1$d h</string>
     <string name="port_is_not_available">Port %1$d is in use, please try another one</string>
+    <string name="tls_fragment">Fragment TLS (anti-DPI)</string>
+    <string name="tls_fragment_desc">Splits the TLS ClientHello so SNI-based filtering can\'t match the domain</string>
+    <string name="battery_unrestrict">Ignore battery optimization</string>
+    <string name="battery_unrestrict_desc">Helps keep the proxy alive in the background</string>
+    <string name="battery_action">Allow</string>
+    <string name="reachability_title">Telegram reachability test</string>
+    <string name="reachability_desc">Direct latency to Telegram data centers</string>
+    <string name="reachability_run">Test</string>
+    <string name="reachability_running">Testing…</string>
+    <string name="frag_off">Off</string>
+    <string name="frag_light">Light</string>
+    <string name="frag_medium">Medium</string>
+    <string name="frag_aggressive">Aggressive</string>
+    <string name="cf_auto">Auto route (CF / direct)</string>
+    <string name="cf_auto_desc">Probes on start and picks whichever route is reachable</string>
 </resources>

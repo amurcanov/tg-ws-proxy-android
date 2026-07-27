@@ -16,6 +16,84 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::client::TlsStream;
 use tokio_rustls::TlsConnector;
+use std::pin::Pin;
+use std::task::{Context as TaskContext, Poll};
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+
+// ---------------------------------------------------------------------------
+// TLS ClientHello fragmentation (anti-DPI)
+//
+// A thin wrapper around the raw TCP stream. While `frag_budget` bytes remain,
+// each write is capped to `frag_size` bytes so the TLS ClientHello (which
+// carries the SNI) is emitted as several small TCP segments instead of one.
+// With TCP_NODELAY set, each capped write becomes its own segment, which
+// defeats DPI that matches the SNI in a single packet. Once the budget is
+// spent, writes pass through unchanged so throughput is not affected.
+// ---------------------------------------------------------------------------
+pub struct FragmentStream<S> {
+    inner: S,
+    frag_budget: usize,
+    frag_size: usize,
+}
+
+impl<S> FragmentStream<S> {
+    pub fn new(inner: S, frag_budget: usize, frag_size: usize) -> Self {
+        FragmentStream {
+            inner,
+            frag_budget,
+            frag_size: frag_size.max(1),
+        }
+    }
+}
+
+impl<S: AsyncRead + Unpin> AsyncRead for FragmentStream<S> {
+    fn poll_read(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_read(cx, buf)
+    }
+}
+
+impl<S: AsyncWrite + Unpin> AsyncWrite for FragmentStream<S> {
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let this = &mut *self;
+        if this.frag_budget == 0 || buf.len() <= 1 {
+            return Pin::new(&mut this.inner).poll_write(cx, buf);
+        }
+        let cap = this.frag_size.min(this.frag_budget).min(buf.len()).max(1);
+        match Pin::new(&mut this.inner).poll_write(cx, &buf[..cap]) {
+            Poll::Ready(Ok(n)) => {
+                this.frag_budget = this.frag_budget.saturating_sub(n);
+                Poll::Ready(Ok(n))
+            }
+            other => other,
+        }
+    }
+
+    fn poll_flush(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_flush(cx)
+    }
+
+    fn poll_shutdown(
+        mut self: Pin<&mut Self>,
+        cx: &mut TaskContext<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        Pin::new(&mut self.inner).poll_shutdown(cx)
+    }
+}
+
+/// Underlying transport for the TLS session: a TCP stream wrapped so the
+/// ClientHello can be optionally fragmented.
+pub type FragTcpStream = FragmentStream<TcpStream>;
 
 // ---------------------------------------------------------------------------
 // WS opcodes
@@ -168,8 +246,8 @@ impl From<std::io::Error> for WsError {
 // ---------------------------------------------------------------------------
 
 pub struct RawWebSocket {
-    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>>,
-    writer: tokio::sync::Mutex<tokio::io::WriteHalf<TlsStream<TcpStream>>>,
+    reader: tokio::sync::Mutex<BufReader<tokio::io::ReadHalf<TlsStream<FragTcpStream>>>>,
+    writer: tokio::sync::Mutex<tokio::io::WriteHalf<TlsStream<FragTcpStream>>>,
     pub closed: AtomicBool,
 }
 
@@ -377,7 +455,7 @@ impl RawWebSocket {
 // Чтение одного фрейма из уже захваченного reader (без повторного lock).
 // Используется recv_with_timeout, чтобы держать lock на всё время чтения фрейма.
 async fn read_frame_locked(
-    reader: &mut BufReader<tokio::io::ReadHalf<TlsStream<TcpStream>>>,
+    reader: &mut BufReader<tokio::io::ReadHalf<TlsStream<FragTcpStream>>>,
 ) -> Result<(u8, Vec<u8>), WsError> {
     let mut hdr = [0u8; 2];
     reader.read_exact(&mut hdr).await?;
@@ -539,6 +617,23 @@ pub async fn ws_connect_once(
         Err(_) => return Err(WsError::Timeout),
     };
     set_sock_opts(&raw_conn);
+
+    // Optionally fragment the TLS ClientHello (anti-DPI). Only the first
+    // `frag_budget` bytes are split; a per-connection random chunk size (inside
+    // the preset's range) avoids a static packet-size fingerprint.
+    let raw_conn = {
+        let mode = TLS_FRAGMENT_MODE.load(Ordering::Relaxed);
+        let (frag_budget, chunk_lo, chunk_hi) = tls_fragment_params(mode);
+        let frag_size = if frag_budget == 0 {
+            1
+        } else {
+            let span = (chunk_hi - chunk_lo + 1).max(1);
+            let mut b = [0u8; 1];
+            rand::thread_rng().fill_bytes(&mut b);
+            chunk_lo + (b[0] as usize % span)
+        };
+        FragmentStream::new(raw_conn, frag_budget, frag_size)
+    };
 
     let connector = TlsConnector::from(TLS_CONFIG.clone());
     let sni = server_name(domain);

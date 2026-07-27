@@ -264,6 +264,15 @@ fun FloatingToolbar(
                             isExpanded = false
                         }
                     )
+                    ThemeOption(
+                        label = "فارسی",
+                        selected = currentLang == "fa",
+                        onClick = {
+                            prefs.edit().putString("app_language", "fa").apply()
+                            activity?.recreate()
+                            isExpanded = false
+                        }
+                    )
                 }
             }
         }

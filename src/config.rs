@@ -53,6 +53,23 @@ impl Default for Cfproxy429State {
     }
 }
 
+// TLS ClientHello fragmentation (anti-DPI). The first bytes written on the raw
+// TCP socket (which carry the TLS ClientHello including the SNI) are split into
+// several small TCP segments so SNI-based DPI cannot match the hostname inside
+// a single packet. Strength presets: 0 = off, 1 = light, 2 = medium,
+// 3 = aggressive (smaller segments over a larger prefix).
+pub static TLS_FRAGMENT_MODE: AtomicI32 = AtomicI32::new(0);
+
+/// (budget, chunk_min, chunk_max) for a fragmentation mode. budget == 0 → off.
+pub fn tls_fragment_params(mode: i32) -> (usize, usize, usize) {
+    match mode {
+        1 => (192, 12, 32),  // light
+        2 => (512, 6, 12),   // medium
+        3 => (1024, 2, 5),   // aggressive
+        _ => (0, 1, 1),      // off
+    }
+}
+
 // Cloudflare proxy config
 pub static CFPROXY_ENABLED: AtomicBool = AtomicBool::new(true);
 

@@ -1,82 +1,120 @@
-<div align="center">
-  
-  # Telegram WS Proxy Android
-<br>
-  <img src="https://img.shields.io/badge/Android-SDK_24--36-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android SDK">
-  <img src="https://img.shields.io/badge/Rust-1.70+-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Version">
-  <img src="https://img.shields.io/badge/Kotlin-Native-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin">
-  <a href="https://github.com/amurcanov/tg-ws-proxy-android/stargazers">
-    <img src="https://img.shields.io/github/stars/amurcanov/tg-ws-proxy-android?style=for-the-badge&logo=github&color=ffca28&labelColor=24292e" alt="Stars">
-  </a>
-</div>
-<br>
+# Telegram WS Proxy — Android
 
-**TG WS Proxy Android** — это локальный **MTProto-прокси** для Telegram на Android. Приложение помогает частично решать проблемы и в ряде сценариев ускоряет работу мессенджера, перенаправляя трафик через защищённые CloudFlare WebSocket-соединения или напрямую к датацентрам Telegram.
+A local **MTProto proxy** for Telegram that runs entirely on your Android
+device. It stands up a loopback proxy that Telegram connects to, then forwards
+that traffic to Telegram's data centers either **directly** or **tunneled over
+WebSocket behind Cloudflare** — useful on networks where Telegram is throttled,
+filtered, or gets stuck while routing.
+
+No account, no remote server, no configuration server. The proxy is a native
+core written in **Rust**; the app around it is **Kotlin + Jetpack Compose**.
 
 ---
 
-<img width="972" height="696" alt="MyCollages (5)" src="https://github.com/user-attachments/assets/7c9b9f2a-fc60-4aee-b93d-db950e24555c" />
+## How it works
 
-## Возможности Android-версии
-
-- **Современный UI/UX:** приложение полностью адаптировано под актуальный Android-интерфейс на базе Material 3 и Jetpack Compose. Основные действия доступны быстро и без перегруженных экранов.
-- **Интеграция с Telegram:** кнопка **«Применить в Telegram»** автоматически передаёт прокси в совместимые клиенты через `tg://proxy` (AyuGram, Plus Messenger, NekoGram и другие).
-- **Фоновый режим:** используется `Foreground Service`, уведомление о работе сервиса и дополнительная логика удержания соединения, чтобы Android не выгружал прокси слишком агрессивно.
-- **Лог-вьюер:** встроенный просмотр событий в реальном времени помогает быстро понять, что происходит с подключением, маршрутом и пулом соединений.
-- **Темы и палитры:** поддерживаются Dynamic Colors на Android 12+, а также встроенные палитры для более старых устройств.
-- **Авто-обновления внутри приложения:** вручную проверять релизы больше не нужно — когда выйдет новая версия, приложение само покажет уведомление об обновлении.
-- **Раздел «Информация»:** внутри приложения есть расширенная справка по настройкам, особенностям CloudFlare, пулу WS-соединений и ручной конфигурации датацентров.
-
----
-
-## Как это работает
-
-```text
-Telegram Android → Локальный MTProto (по умолчанию 127.0.0.1:1443) → TG WS Proxy → WSS (через CloudFlare или напрямую) → Telegram DC
+```
+Telegram app  →  local MTProto (default 127.0.0.1:1443)  →  this app
+              →  WSS  (via Cloudflare  or  direct)         →  Telegram DC
 ```
 
-1. Приложение поднимает локальный MTProto-прокси средствами нативного движка на языке **Rust**.
-2. Перехватывает подключения Telegram через локальный порт и сгенерированный секретный ключ.
-3. Извлекает `DC ID` из исходного пакета и устанавливает защищённое WebSocket (`TLS`) соединение с нужным датацентром, при необходимости проксируя трафик через CloudFlare.
-4. Использует пул соединений, keepalive-механику и fallback-сценарии для более устойчивой работы в реальных сетевых условиях.
-
-## Быстрый старт
-
-1. Скачайте актуальный `APK` со **[страницы релизов](https://github.com/amurcanov/tg-ws-proxy-android/releases)**.
-2. Установите приложение на ваш Android-смартфон.
-3. Откройте **TG WS Proxy Android**.
-4. Ознакомьтесь со справкой внутри приложения.
-5. Нажмите **«Запустить прокси»** — появится уведомление о работе в фоновом режиме.
-6. Нажмите **«Применить в Telegram»** — откроется Telegram-клиент, где останется только подтвердить подключение.
+1. The Rust core starts a local MTProto endpoint and generates a connection
+   secret.
+2. Telegram is pointed at that local endpoint (`tg://proxy`).
+3. For each session the core reads the target `DC ID`, opens a TLS WebSocket to
+   the right data center, and — when enabled — routes it through Cloudflare.
+4. A warm connection pool, keepalives, DoH name resolution, and route
+   fallbacks keep it usable on flaky mobile networks.
 
 ---
 
-# 🎦 Видео гайд по установке и использованию
+## Features
 
-<div align="center">
-
-<img width="1376" height="768" alt="578516258-6b2df494-de8d-44a2-a281-389fc7551a7c" src="https://github.com/user-attachments/assets/ed1449d4-0a14-4b46-8f35-b787bdee3e32" />
-
-<br><br>
-
-[**Смотреть на YouTube**](https://youtu.be/RP4RwyEHpwc) | [**Смотреть в Telegram**](https://t.me/avencoreschat/506796)
-
-</div>
-
----
-
-
-* **Краши и проблемы с установкой:** если у вас возникают сбои, вылеты или ошибки при установке, пожалуйста, сохраняйте отчёты и ссылки на них. Также ознакомьтесь с блоком `NOTE` ниже и поднимайте полноценные `issue` с полезной технической информацией.
-
-
-> [!NOTE]
-> ### Отчёты об ошибках
-> Приложение адаптировано под мобильные сети, однако проблемы с фоновой работой всё ещё возможны из-за системных ограничений или сети.
->
-> Если у вас возникла проблема, сбой или вопрос, пожалуйста, нажмите кнопку **«Собрать отчёт»** внутри приложения и приложите полученные данные к вашему `issue`. Мелкие ошибки в логах при нормально работающем прокси можно игнорировать.
+- **Two routing modes** — direct to Telegram DCs, or tunneled through
+  Cloudflare WebSocket domains. Custom Cloudflare domains are supported.
+- **Auto route selection** — probe the direct route on start and fall back to
+  Cloudflare automatically when it isn't reachable.
+- **Anti-DPI TLS fragmentation** — optionally split the TLS ClientHello across
+  several small TCP segments so SNI-based filtering can't match the hostname in
+  a single packet. Off / Light / Medium / Aggressive presets.
+- **Self-healing watchdog** — if a route stalls (active sessions but no traffic
+  for a while) the proxy restarts itself, with backoff, instead of hanging.
+- **Reachability test** — measure direct latency to Telegram data centers from
+  inside the app.
+- **Stay-alive helpers** — foreground service, wake-lock refresh, boot
+  autostart, and a battery-optimization exemption prompt.
+- **Quick controls** — a quick-settings tile and a live event-log viewer.
+- **Modern UI** — Material 3, dynamic colors on Android 12+, built-in palettes,
+  and localization in English, Russian, and Persian (with RTL support).
+- **In-app update check** against the repository's GitHub releases.
 
 ---
 
-## Лицензия
+## Quick start
 
-Этот форк распространяется под лицензией **GPLv3**. Оригинальный код `tg-ws-proxy` от [Flowseal](https://github.com/Flowseal) доступен под лицензией **MIT**.
+1. Install the latest APK from this repository's **Releases** page, or build it
+   yourself (below).
+2. Open the app and skim the in-app **Info** help.
+3. Tap **Start proxy** — a foreground notification confirms it's running.
+4. Tap **Apply in Telegram** — a compatible client opens with the proxy
+   pre-filled; confirm the connection there.
+
+If a connection takes a long time, the watchdog will try to recover the route
+on its own; you can also flip the Cloudflare toggle and compare.
+
+---
+
+## Build it yourself
+
+The APK is produced by the `Build APK` GitHub Actions workflow
+(`.github/workflows/build-apk.yml`) on every push: it compiles the Rust native
+libraries with `cargo-ndk` for `arm64-v8a` and `armeabi-v7a`, then assembles
+the release APKs and uploads them as build artifacts.
+
+Locally you'll need the Android SDK/NDK, a Rust toolchain, and `cargo-ndk`:
+
+```bash
+# 1. native core → app/src/main/jniLibs/<abi>/libtgwsproxy.so
+cargo ndk -t arm64-v8a   --platform 24 -o app/src/main/jniLibs build --release
+cargo ndk -t armeabi-v7a --platform 21 -o app/src/main/jniLibs build --release
+
+# 2. the APKs
+./gradlew assembleRelease
+```
+
+Three flavors are built: `universal`, `arm64` (v8a), and `arm32` (v7a).
+
+---
+
+## Configuration notes
+
+- **Cloudflare vs direct** — Cloudflare can be steadier on some carriers but
+  depends on routing and DNS; direct is simpler when it isn't blocked. Auto mode
+  picks for you.
+- **WS pool** — number of pre-warmed WebSocket connections; 2–4 is enough for
+  most cases.
+- **TLS fragmentation** — start at Light and increase only if a network keeps
+  blocking the handshake; stronger presets add tiny per-connection overhead.
+- **Secret key** — a 16-byte MTProto key; only rotate it if your old
+  connection link leaked.
+- **Manual DCs** — normally unnecessary; mainly for diagnostics and unusual
+  routes.
+
+---
+
+## Reporting problems
+
+Use the in-app **Build report** button and attach its output to any issue —
+it captures Android version, ABI, active settings, and recent errors. Minor
+log warnings while the proxy is otherwise working can be ignored.
+
+---
+
+## License
+
+Released under the **GNU GPLv3**. The underlying `tg-ws-proxy` idea is
+originally distributed under the MIT license.
+
+---
+
+_This project is a community fork of the original **tg-ws-proxy** project, adapted and extended for Android._

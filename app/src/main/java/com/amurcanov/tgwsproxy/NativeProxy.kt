@@ -12,6 +12,7 @@ interface ProxyLibrary : Library {
     fun StartProxy(host: String, port: Int, dcIps: String, secret: String, verbose: Int): Int
     fun StopProxy(): Int
     fun SetPoolSize(size: Int)
+    fun SetTlsFragment(enabled: Int)
     fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
     fun GetSecretWithPrefix(): Pointer?
@@ -30,6 +31,11 @@ object NativeProxy {
 
     fun setPoolSize(size: Int) {
         ProxyLibrary.INSTANCE.SetPoolSize(size)
+    }
+
+    /** mode: 0 = off, 1 = light, 2 = medium, 3 = aggressive */
+    fun setTlsFragment(mode: Int) {
+        ProxyLibrary.INSTANCE.SetTlsFragment(mode)
     }
 
     fun setCfProxyCacheDir(cacheDir: String) {
