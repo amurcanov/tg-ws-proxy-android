@@ -33,8 +33,9 @@ object NativeProxy {
         ProxyLibrary.INSTANCE.SetPoolSize(size)
     }
 
-    fun setTlsFragment(enabled: Boolean) {
-        ProxyLibrary.INSTANCE.SetTlsFragment(if (enabled) 1 else 0)
+    /** mode: 0 = off, 1 = light, 2 = medium, 3 = aggressive */
+    fun setTlsFragment(mode: Int) {
+        ProxyLibrary.INSTANCE.SetTlsFragment(mode)
     }
 
     fun setCfProxyCacheDir(cacheDir: String) {

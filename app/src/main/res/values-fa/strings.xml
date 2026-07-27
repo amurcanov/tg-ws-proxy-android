@@ -136,4 +136,10 @@
     <string name="reachability_desc">تأخیر مستقیم تا دیتاسنترهای تلگرام</string>
     <string name="reachability_run">تست</string>
     <string name="reachability_running">در حال تست…</string>
+    <string name="frag_off">خاموش</string>
+    <string name="frag_light">سبک</string>
+    <string name="frag_medium">متوسط</string>
+    <string name="frag_aggressive">تهاجمی</string>
+    <string name="cf_auto">مسیرِ خودکار (CF / مستقیم)</string>
+    <string name="cf_auto_desc">موقع اجرا probe می‌زند و مسیرِ در دسترس را انتخاب می‌کند</string>
 </resources>

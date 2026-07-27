@@ -619,16 +619,18 @@ pub async fn ws_connect_once(
     set_sock_opts(&raw_conn);
 
     // Optionally fragment the TLS ClientHello (anti-DPI). Only the first
-    // `frag_budget` bytes are split; a per-connection random chunk size avoids
-    // a static packet-size fingerprint.
+    // `frag_budget` bytes are split; a per-connection random chunk size (inside
+    // the preset's range) avoids a static packet-size fingerprint.
     let raw_conn = {
-        let frag_budget = if TLS_FRAGMENT.load(Ordering::Relaxed) { 512 } else { 0 };
+        let mode = TLS_FRAGMENT_MODE.load(Ordering::Relaxed);
+        let (frag_budget, chunk_lo, chunk_hi) = tls_fragment_params(mode);
         let frag_size = if frag_budget == 0 {
             1
         } else {
+            let span = (chunk_hi - chunk_lo + 1).max(1);
             let mut b = [0u8; 1];
             rand::thread_rng().fill_bytes(&mut b);
-            3 + (b[0] as usize % 6) // 3..=8 bytes per segment
+            chunk_lo + (b[0] as usize % span)
         };
         FragmentStream::new(raw_conn, frag_budget, frag_size)
     };

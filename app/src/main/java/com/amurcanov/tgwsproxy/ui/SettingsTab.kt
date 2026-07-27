@@ -94,7 +94,8 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCustomDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
     val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
-    val tlsFragmentEnabled by settingsStore.tlsFragmentEnabled.collectAsStateWithLifecycle(initialValue = false)
+    val tlsFragmentMode by settingsStore.tlsFragmentMode.collectAsStateWithLifecycle(initialValue = 0)
+    val cfAutoMode by settingsStore.cfAutoMode.collectAsStateWithLifecycle(initialValue = false)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
 
     if (!isReady) {
@@ -447,7 +448,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
-            // TLS ClientHello fragmentation (anti-DPI)
+            // Auto route selection: probe direct vs Cloudflare and pick on start
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -455,6 +456,41 @@ fun SettingsTab(settingsStore: SettingsStore) {
             ) {
                 Row(
                     modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Cloud, null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.cf_auto),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            stringResource(com.amurcanov.tgwsproxy.R.string.cf_auto_desc),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Switch(
+                    checked = cfAutoMode,
+                    onCheckedChange = { enabled ->
+                        scope.launch { settingsStore.saveCfAutoMode(enabled) }
+                    }
+                )
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+
+            // TLS ClientHello fragmentation (anti-DPI) — strength presets
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -477,12 +513,26 @@ fun SettingsTab(settingsStore: SettingsStore) {
                         )
                     }
                 }
-                Switch(
-                    checked = tlsFragmentEnabled,
-                    onCheckedChange = { enabled ->
-                        scope.launch { settingsStore.saveTlsFragment(enabled) }
-                    }
+                Spacer(Modifier.height(8.dp))
+                val fragLabels = listOf(
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_off),
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_light),
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_medium),
+                    stringResource(com.amurcanov.tgwsproxy.R.string.frag_aggressive)
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    fragLabels.forEachIndexed { idx, label ->
+                        PoolChip(
+                            label = label,
+                            selected = tlsFragmentMode == idx,
+                            modifier = Modifier.weight(1f),
+                            onClick = { scope.launch { settingsStore.saveTlsFragmentMode(idx) } }
+                        )
+                    }
+                }
             }
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))

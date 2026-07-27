@@ -28,10 +28,19 @@ object ProxyController {
         val isExperimental = settingsStore.isExperimentalMode.first()
         val isDcAuto = settingsStore.isDcAuto.first()
         val poolSize = settingsStore.poolSize.first()
-        val cfEnabled = settingsStore.cfproxyEnabled.first()
+        var cfEnabled = settingsStore.cfproxyEnabled.first()
         val customCfDomainEnabled = settingsStore.customCfDomainEnabled.first()
         val customCfDomain = settingsStore.customCfDomain.first().trim()
-        val tlsFragment = settingsStore.tlsFragmentEnabled.first()
+        val tlsFragmentMode = settingsStore.tlsFragmentMode.first()
+
+        // Auto mode: probe the direct route and prefer it when it is reachable,
+        // otherwise fall back to the Cloudflare route. Lets the app pick what
+        // works on the current network instead of the user guessing.
+        val cfAuto = settingsStore.cfAutoMode.first()
+        if (cfAuto) {
+            val directReachable = ConnectivityTools.probeTelegram().any { it.reachable }
+            cfEnabled = !directReachable
+        }
         val secretKey = ensureSecretKey(settingsStore)
 
         val parsedIps = buildList {
@@ -69,7 +78,7 @@ object ProxyController {
                     if (customCfDomainEnabled && cfEnabled) customCfDomain else ""
                 )
                 putExtra(ProxyService.EXTRA_SECRET_KEY, secretKey)
-                putExtra(ProxyService.EXTRA_TLS_FRAGMENT, tlsFragment)
+                putExtra(ProxyService.EXTRA_TLS_FRAGMENT, tlsFragmentMode)
             }
         )
         ProxyTileService.requestSync(context)

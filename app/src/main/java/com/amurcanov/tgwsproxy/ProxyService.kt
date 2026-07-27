@@ -43,7 +43,15 @@ class ProxyService : Service() {
     private var lastCfPriority: Boolean = true
     private var lastCfDomain: String = ""
     private var lastSecretKey: String = ""
-    private var lastTlsFragment: Boolean = false
+    private var lastTlsFragmentMode: Int = 0
+
+    // Watchdog state: detect a stalled route (active sessions but no traffic
+    // movement) and auto-restart, which automates the manual "restart the
+    // proxy if it hangs" workaround.
+    private var wdLastBytes: Long = -1L
+    private var wdStallTicks: Int = 0
+    private var wdLastRestartAtMs: Long = 0L
+    private var wdRestartCount: Int = 0
 
     companion object {
         const val ACTION_START = "com.amurcanov.tgwsproxy.START"
@@ -72,6 +80,13 @@ class ProxyService : Service() {
         private const val NOTIFICATION_MIN_UPDATE_MS = 3_000L
         private const val NATIVE_STOP_WAIT_MS = 3_000L
 
+        // Watchdog: consecutive zero-traffic ticks (× STATS_UPDATE_MS) with
+        // active sessions before an auto-restart; min gap between restarts; and
+        // a cap on consecutive auto-restarts (reset once traffic resumes).
+        private const val WATCHDOG_STALL_TICKS = 6
+        private const val WATCHDOG_MIN_RESTART_INTERVAL_MS = 30_000L
+        private const val WATCHDOG_MAX_RESTARTS = 4
+
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning
         private val _isVerifiedRunning = MutableStateFlow(false)
@@ -95,8 +110,8 @@ class ProxyService : Service() {
                 val cfPriority = intent.getBooleanExtra(EXTRA_CFPROXY_PRIORITY, true)
                 val cfDomain = intent.getStringExtra(EXTRA_CFPROXY_DOMAIN) ?: ""
                 val secretKey = intent.getStringExtra(EXTRA_SECRET_KEY) ?: ""
-                val tlsFragment = intent.getBooleanExtra(EXTRA_TLS_FRAGMENT, false)
-                startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey, tlsFragment)
+                val tlsFragmentMode = intent.getIntExtra(EXTRA_TLS_FRAGMENT, 0)
+                startProxy(bindIp, port, ips, poolSize, cfEnabled, cfPriority, cfDomain, secretKey, tlsFragmentMode)
             }
             ACTION_STOP -> {
                 stopProxy()
@@ -109,7 +124,7 @@ class ProxyService : Service() {
                 // If we had saved params, try to restart
                 if (lastPort > 0 && lastSecretKey.isNotEmpty()) {
                     Log.w(TAG, "Service restarted by system, re-starting proxy")
-                    startProxy(lastBindIp, lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey, lastTlsFragment)
+                    startProxy(lastBindIp, lastPort, lastIps, lastPoolSize, lastCfEnabled, lastCfPriority, lastCfDomain, lastSecretKey, lastTlsFragmentMode)
                 } else {
                     stopSelf()
                 }
@@ -137,7 +152,7 @@ class ProxyService : Service() {
     private fun startProxy(bindIp: String, port: Int, ips: String, poolSize: Int = 4,
                            cfEnabled: Boolean = true, cfPriority: Boolean = true,
                            cfDomain: String = "", secretKey: String = "",
-                           tlsFragment: Boolean = false) {
+                           tlsFragmentMode: Int = 0) {
         if (_isRunning.value || stopInProgress) return
         _isVerifiedRunning.value = false
 
@@ -150,7 +165,7 @@ class ProxyService : Service() {
         lastCfPriority = cfPriority
         lastCfDomain = cfDomain
         lastSecretKey = secretKey
-        lastTlsFragment = tlsFragment
+        lastTlsFragmentMode = tlsFragmentMode
         notificationStartedAtMs = System.currentTimeMillis()
         lastNotificationContent = getString(R.string.notification_starting)
         lastNotificationAtMs = notificationStartedAtMs
@@ -184,7 +199,7 @@ class ProxyService : Service() {
 
             try {
                 NativeProxy.setPoolSize(poolSize)
-                NativeProxy.setTlsFragment(tlsFragment)
+                NativeProxy.setTlsFragment(tlsFragmentMode)
                 NativeProxy.setCfProxyCacheDir(cacheDir.absolutePath)
                 NativeProxy.setCfProxyConfig(cfEnabled, cfPriority, cfDomain)
                 val result = NativeProxy.startProxy(bindIp, port, ips, secretKey, 1)
@@ -243,11 +258,50 @@ class ProxyService : Service() {
                         val active = activeConns.toIntOrNull() ?: 0
                         val text = getString(R.string.notification_traffic, formatBytes(totalBytes), active)
                         updateNotification(text)
+                        maybeRunWatchdog(totalBytes, active)
                     } catch (e: Exception) {
                         Log.w(TAG, "Stats update failed", e)
                     }
                 }
             }
+        }
+    }
+
+    /**
+     * Stall detector: if the proxy is verified running and has active client
+     * sessions but total traffic hasn't advanced for several ticks, the current
+     * route is likely stuck (not a crash). Auto-restart it, with a minimum gap
+     * and a cap on consecutive attempts so it never restart-loops.
+     */
+    private fun maybeRunWatchdog(totalBytes: Long, active: Int) {
+        if (!_isVerifiedRunning.value || stopInProgress || active <= 0) {
+            // No active sessions (or not verified) → not a stall. Reset baseline.
+            wdStallTicks = 0
+            wdLastBytes = totalBytes
+            return
+        }
+
+        if (wdLastBytes >= 0 && totalBytes <= wdLastBytes) {
+            // No traffic growth since last tick.
+            wdStallTicks++
+        } else {
+            // Traffic advanced (or first sample) → healthy; clear stall + budget.
+            wdStallTicks = 0
+            wdRestartCount = 0
+        }
+        wdLastBytes = totalBytes
+
+        val now = System.currentTimeMillis()
+        if (wdStallTicks >= WATCHDOG_STALL_TICKS &&
+            now - wdLastRestartAtMs >= WATCHDOG_MIN_RESTART_INTERVAL_MS &&
+            wdRestartCount < WATCHDOG_MAX_RESTARTS
+        ) {
+            wdStallTicks = 0
+            wdLastBytes = -1L
+            wdLastRestartAtMs = now
+            wdRestartCount++
+            Log.w(TAG, "Watchdog: traffic stalled with active sessions, auto-restarting (attempt $wdRestartCount)")
+            restartProxy()
         }
     }
 
@@ -296,7 +350,7 @@ class ProxyService : Service() {
                 cfPriority = lastCfPriority,
                 cfDomain = lastCfDomain,
                 secretKey = lastSecretKey,
-                tlsFragment = lastTlsFragment
+                tlsFragmentMode = lastTlsFragmentMode
             )
         }
     }

@@ -136,4 +136,10 @@
     <string name="reachability_desc">Прямая задержка до датацентров Telegram</string>
     <string name="reachability_run">Тест</string>
     <string name="reachability_running">Проверка…</string>
+    <string name="frag_off">Выкл</string>
+    <string name="frag_light">Лёгкий</string>
+    <string name="frag_medium">Средний</string>
+    <string name="frag_aggressive">Сильный</string>
+    <string name="cf_auto">Авто-маршрут (CF / прямой)</string>
+    <string name="cf_auto_desc">При запуске проверяет и выбирает доступный маршрут</string>
 </resources>

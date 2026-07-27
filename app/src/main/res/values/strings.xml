@@ -136,4 +136,10 @@
     <string name="reachability_desc">Direct latency to Telegram data centers</string>
     <string name="reachability_run">Test</string>
     <string name="reachability_running">Testing…</string>
+    <string name="frag_off">Off</string>
+    <string name="frag_light">Light</string>
+    <string name="frag_medium">Medium</string>
+    <string name="frag_aggressive">Aggressive</string>
+    <string name="cf_auto">Auto route (CF / direct)</string>
+    <string name="cf_auto_desc">Probes on start and picks whichever route is reachable</string>
 </resources>

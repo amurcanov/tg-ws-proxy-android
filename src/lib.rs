@@ -189,10 +189,12 @@ pub extern "C" fn SetPoolSize(size: c_int) {
     POOL_SIZE.store(n, Ordering::Relaxed);
 }
 
-/// Enable/disable TLS ClientHello fragmentation (anti-DPI).
+/// Set TLS ClientHello fragmentation strength (anti-DPI):
+/// 0 = off, 1 = light, 2 = medium, 3 = aggressive.
 #[unsafe(no_mangle)]
-pub extern "C" fn SetTlsFragment(enabled: c_int) {
-    TLS_FRAGMENT.store(enabled != 0, Ordering::Relaxed);
+pub extern "C" fn SetTlsFragment(mode: c_int) {
+    let m = mode.clamp(0, 3);
+    TLS_FRAGMENT_MODE.store(m, Ordering::Relaxed);
 }
 
 /// # Safety
