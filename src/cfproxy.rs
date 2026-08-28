@@ -426,10 +426,11 @@ pub async fn resolve_doh(domain: &str) -> Option<String> {
         "https://dns.google/dns-query",
         "https://dns.quad9.net/dns-query",
         "https://dns.adguard-dns.com/dns-query",
-    ];
+        "https://one.one.one.one/dns-query",  // ← Добавлен 5-й endpoint
+    ];    
 
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_millis(1500))
+        .timeout(Duration::from_millis(2000))  // ← Увеличено с 1500 до 2000 мс
         .build()
         .ok()?;
 
@@ -468,9 +469,8 @@ pub async fn resolve_doh(domain: &str) -> Option<String> {
         let domain2 = domain.to_string();
         let tx = tx.clone();
         tasks.push(tokio::spawn(async move {
-            let host = format!("{}:443", domain2);
             if let Ok(Ok(addrs)) = tokio::time::timeout(
-                Duration::from_millis(1500),
+                Duration::from_millis(2000),  // ← Увеличено с 1500 до 2000 мс
                 tokio::net::lookup_host(host),
             )
             .await
