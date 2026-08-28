@@ -30,11 +30,11 @@ pub const WS_POOL_CONNECT_TIMEOUT: f64 = 8.0;
 pub const CFPROXY_CACHE_FILE_NAME: &str = "cfproxy-domains-cache.txt";
 pub const CFPROXY_ACTIVE_FILE_NAME: &str = "cfproxy-active-domain.txt";
 pub const CFPROXY_REFRESH_INTERVAL: Duration = Duration::from_secs(12 * 3600);
-pub const CFPROXY_DIAL_PHASE_TIMEOUT: Duration = Duration::from_secs(4);
-pub const CFPROXY_FALLBACK_PARALLEL: usize = 2;
-pub const CFPROXY_429_COOLDOWN: Duration = Duration::from_secs(45);
-pub const CFPROXY_429_MAX_COOLDOWN: Duration = Duration::from_secs(300);
-pub const CFPROXY_GLOBAL_PARALLEL: usize = 4;
+pub const CFPROXY_DIAL_PHASE_TIMEOUT: Duration = Duration::from_secs(8);        // ← Увеличено с 4 до 8 сек
+pub const CFPROXY_FALLBACK_PARALLEL: usize = 3;                                 // ← Увеличено с 2 до 3
+pub const CFPROXY_429_COOLDOWN: Duration = Duration::from_secs(30);             // ← Уменьшено с 45 до 30 сек
+pub const CFPROXY_429_MAX_COOLDOWN: Duration = Duration::from_secs(180);        // ← Уменьшено с 300 до 180 сек
+pub const CFPROXY_GLOBAL_PARALLEL: usize = 6;                                   // ← Увеличено с 4 до 6
 
 pub static RECV_BUF: AtomicI32 = AtomicI32::new(DEFAULT_RECV_BUF as i32);
 pub static SEND_BUF: AtomicI32 = AtomicI32::new(DEFAULT_SEND_BUF as i32);
