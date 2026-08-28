@@ -1,5 +1,6 @@
 <div align="center">
-  # Telegram WS Proxy Android
+  Telegram WS Proxy Android
+  
 <br>
   <img src="https://img.shields.io/badge/Android-SDK_24--36-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android SDK">
   <img src="https://img.shields.io/badge/Rust-1.70+-000000?style=for-the-badge&logo=rust&logoColor=white" alt="Rust Version">
