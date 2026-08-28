@@ -1,6 +1,4 @@
 <div align="center">
-> [!NOTE]
-> Приложение адаптировано под мобильные сети, переписал работу в фоне.
   # Telegram WS Proxy Android
 <br>
   <img src="https://img.shields.io/badge/Android-SDK_24--36-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android SDK">
@@ -11,7 +9,8 @@
   </a>
 </div>
 <br>
-
+> [!NOTE]
+> Приложение адаптировано под мобильные сети, переписал работу в фоне.
 **TG WS Proxy Android** — это локальный **MTProto-прокси** для Telegram на Android. Приложение помогает частично решать проблемы и в ряде сценариев ускоряет работу мессенджера, перенаправляя трафик через защищённые CloudFlare WebSocket-соединения или напрямую к датацентрам Telegram.
 
 ---
