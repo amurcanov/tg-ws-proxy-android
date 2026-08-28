@@ -13,10 +13,6 @@
 
 ---
 
-<img width="972" height="696" alt="MyCollages (5)" src="https://github.com/user-attachments/assets/7c9b9f2a-fc60-4aee-b93d-db950e24555c" />
-
----
-
 > [!NOTE]
 > Приложение адаптировано под мобильные сети, переписал работу в фоне.
 
