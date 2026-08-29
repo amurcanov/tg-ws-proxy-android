@@ -18,6 +18,8 @@ interface ProxyLibrary : Library {
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
     fun FreeString(p: Pointer)
+    fun SetStealthMode(enabled: Int)
+    fun GetStealthMode(): Int
 }
 
 object NativeProxy {
@@ -63,5 +65,15 @@ object NativeProxy {
     /** Обновляет конфигурацию DC адресов без перезапуска прокси */
     fun updateDcConfig(dcIps: String): Int {
         return ProxyLibrary.INSTANCE.UpdateDcConfig(dcIps)
+    }
+
+    /** Установить режим «Невидимка» (Stealth Mode) */
+    fun setStealthMode(enabled: Boolean) {
+        ProxyLibrary.INSTANCE.SetStealthMode(if (enabled) 1 else 0)
+    }
+
+    /** Получить статус режима «Невидимка» */
+    fun getStealthMode(): Boolean {
+        return ProxyLibrary.INSTANCE.GetStealthMode() != 0
     }
 }

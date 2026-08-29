@@ -20,6 +20,9 @@ use tokio_util::sync::CancellationToken;
 // Глобальный рантайм — никогда не дропается
 static RUNTIME: OnceCell<Runtime> = OnceCell::new();
 
+// Режим «Невидимка» (Stealth Mode) — изменяет сигнатуру трафика
+static STEALTH_MODE: Mutex<bool> = Mutex::new(false);
+
 struct ProxyState {
     pool: Arc<WsPool>,
     handle: tokio::task::JoinHandle<()>,
@@ -277,4 +280,18 @@ pub unsafe extern "C" fn FreeString(p: *mut c_char) {
     unsafe {
         let _ = CString::from_raw(p);
     }
+}
+
+/// Установить режим «Невидимка» (Stealth Mode)
+#[unsafe(no_mangle)]
+pub extern "C" fn SetStealthMode(enabled: c_int) {
+    let mut guard = STEALTH_MODE.lock();
+    *guard = enabled != 0;
+}
+
+/// Получить статус режима «Невидимка»
+#[unsafe(no_mangle)]
+pub extern "C" fn GetStealthMode() -> c_int {
+    let guard = STEALTH_MODE.lock();
+    if *guard { 1 } else { 0 }
 }
