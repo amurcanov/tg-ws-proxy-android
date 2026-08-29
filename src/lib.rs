@@ -228,7 +228,28 @@ pub unsafe extern "C" fn SetSecret(c_secret: *const c_char) {
     }
     *PROXY_SECRET.write() = s;
 }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn UpdateDcConfig(c_dc_ips: *const c_char) -> c_int {
+    let cell = state_cell();
+    let guard = cell.lock();
 
+    let state = match guard.as_ref() {
+        Some(s) => s,
+        None => return -1, // Прокси не запущен
+    };
+
+    let dc_ips_str = cstr_to_string(c_dc_ips);
+    let dc_opt_map = proxy::parse_cidr_pool(&dc_ips_str);
+
+    // Обновляем глобальную конфигурацию DC
+    {
+        let mut m = proxy::DC_OPT.write();
+        *m = dc_opt_map;
+    }
+
+    linfo!("UpdateDcConfig: DC configuration updated successfully");
+    0
+}
 #[unsafe(no_mangle)]
 pub extern "C" fn GetStats() -> *mut c_char {
     let s = STATS.summary();
