@@ -74,6 +74,8 @@ class ProxyService : Service() {
         
         /** Обновляет конфигурацию DC адресов без перезапуска прокси */
         fun updateDcConfig(dcIps: String): Boolean {
+		
+		fun updateDcConfig(dcIps: String): Boolean {
             if (!_isRunning.value) return false
             val result = NativeProxy.updateDcConfig(dcIps)
             return result == 0

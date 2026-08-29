@@ -19,6 +19,7 @@ class ProxyTileService : TileService() {
     // Получаем доступ к NativeProxy для статистики
     private val nativeProxy = NativeProxy
 
+	private val nativeProxy = NativeProxy
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var listenJob: Job? = null
 
@@ -101,12 +102,14 @@ class ProxyTileService : TileService() {
                     }
                 }
             }
+			}
             contentDescription = label
             updateTile()
         }
     }
     
     private fun extractActiveConnections(stats: String?): Int {
+	private fun extractActiveConnections(stats: String?): Int {
         if (stats.isNullOrBlank()) return 0
         val idx = stats.indexOf("active=")
         if (idx == -1) return 0
