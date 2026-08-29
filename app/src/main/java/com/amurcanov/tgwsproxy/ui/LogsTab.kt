@@ -120,6 +120,9 @@ fun LogsTab(settingsStore: SettingsStore) {
             LogFilterChip("ERROR", savedError && !savedNull, true, modifier = Modifier.weight(1f)) {
                 scope.launch { settingsStore.saveLogFilters(false, savedInfo, !savedError, false) }
             }
+            LogFilterChip("NULL", savedNull, true, modifier = Modifier.weight(1f)) {
+                scope.launch { settingsStore.saveLogFilters(false, false, false, !savedNull) }
+            }
         }
         val isDark = isSystemInDarkTheme()
         val terminalBg = if (isDark) AppColors.terminalBgDark else AppColors.terminalBg
@@ -127,7 +130,6 @@ fun LogsTab(settingsStore: SettingsStore) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .height(300.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(terminalBg)
         ) {

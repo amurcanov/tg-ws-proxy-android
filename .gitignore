@@ -1,93 +1,49 @@
-```kotlin
-# Kotlin/Android build artifacts
+```
+# Compiled and build artifacts
 *.class
-*.jar
-*.war
-*.ear
-*.zip
-*.tar
-*.tar.gz
-
-# Android specific
-*.apk
-*.aar
-*.dex
-
-# Build directories
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+*.out
 build/
-bin/
-gen/
-out/
+dist/
+target/
 
-# Gradle
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
 .gradle/
-!gradle.properties
 
-# Local configuration file (sdk path, etc)
-local.properties
-gradle.properties
-
-# Proguard generated files
-proguard/
-
-# Log Files
+# Logs and temp files
 *.log
-
-# NDK
-obj/
-
-# IntelliJ IDEA
-.idea/
-*.iml
-*.iws
-*.ipr
-
-# VS Code
-.vscode/
-
-# Temporary files
 *.tmp
-*.temp
-*.bak
+*.swp
 
-# Environment variables
+# Environment
 .env
 .env.local
 *.env.*
 
-# Coverage reports
-coverage/
-*.lcov
-*.profdata
-
-# Python artifacts (if any mixed with Kotlin project)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-
-# Node artifacts
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# Rust artifacts (for lib.rs)
-target/
-Cargo.lock
-**/*.rs.bk
+# Editors
+.vscode/
+.idea/
 
 # System files
 .DS_Store
 Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Rust specific
+Cargo.lock
 ```

@@ -92,7 +92,6 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedCustomDomain by settingsStore.customCfDomain.collectAsStateWithLifecycle(initialValue = "")
     val autoStartOnBoot by settingsStore.autoStartOnBoot.collectAsStateWithLifecycle(initialValue = false)
     val savedSecretKey by settingsStore.secretKey.collectAsStateWithLifecycle(initialValue = "LOADING")
-    val savedStealthMode by settingsStore.stealthMode.collectAsStateWithLifecycle(initialValue = false)
 
     if (!isReady) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -127,8 +126,6 @@ fun SettingsTab(settingsStore: SettingsStore) {
     var customCfDomainEnabled by rememberSaveable(savedCustomDomainEnabled) { mutableStateOf(savedCustomDomainEnabled) }
     var customCfDomain by rememberSaveable(savedCustomDomain) { mutableStateOf(savedCustomDomain) }
     var secretKeyText by remember(savedSecretKey) { mutableStateOf(if (savedSecretKey == "LOADING") "" else savedSecretKey) }
-    var stealthMode by rememberSaveable(savedStealthMode) { mutableStateOf(savedStealthMode) }
-    var showSecretKey by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(savedSecretKey) {
         if (savedSecretKey == "") {
@@ -146,12 +143,11 @@ fun SettingsTab(settingsStore: SettingsStore) {
         saveJob?.cancel()
         saveJob = scope.launch {
             delay(300)
-            settingsStore.saveAllExtended(
+            settingsStore.saveAll(
                 isDcAuto, dc1Text, dc2Text, dc3Text, dc4Text, dc5Text, dc203Text,
                 dc1mText, dc2mText, dc3mText, dc4mText, dc5mText, dc203mText,
                 experimentalMode, bindIpText, portText, selectedPoolSize,
-                cfEnabled, customCfDomainEnabled, customCfDomain, secretKeyText,
-                stealthMode
+                cfEnabled, customCfDomainEnabled, customCfDomain, secretKeyText
             )
         }
     }
@@ -444,138 +440,10 @@ fun SettingsTab(settingsStore: SettingsStore) {
                     }
                 )
             }
-
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        androidx.compose.material.icons.Icons.Default.Visibility, null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        "Режим «Невидимка»",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                Switch(
-                    checked = stealthMode,
-                    onCheckedChange = { 
-                        stealthMode = it
-                        scheduleSave()
-                    }
-                )
-            }
         }
 
         Spacer(Modifier.height(12.dp))
-
-        AppSectionCard {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.VpnKey, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
-                    Text(
-                        "Secret Key",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-                
-                Surface(
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                    color = androidx.compose.ui.graphics.Color.Transparent
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        androidx.compose.foundation.text.BasicTextField(
-                            value = if (showSecretKey) secretKeyText else "•".repeat(32),
-                            onValueChange = { },
-                            enabled = false,
-                            modifier = Modifier.weight(1f).padding(horizontal = 16.dp),
-                            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                                fontWeight = FontWeight.Medium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                            ),
-                            singleLine = true
-                        )
-                        
-                        IconButton(onClick = { showSecretKey = !showSecretKey }) {
-                            Icon(
-                                if (showSecretKey) androidx.compose.material.icons.Icons.Default.Visibility else androidx.compose.material.icons.Icons.Default.VisibilityOff,
-                                contentDescription = if (showSecretKey) "Скрыть" else "Показать",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-                
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = {
-                            val newKey = generateRandomSecret()
-                            secretKeyText = newKey
-                            scheduleSave()
-                        },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ) {
-                        Icon(Icons.Default.Refresh, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Обновить", fontWeight = FontWeight.SemiBold)
-                    }
-                    
-                    OutlinedButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            val clip = ClipData.newPlainText("Secret Key", secretKeyText)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Скопировано", Toast.LENGTH_SHORT).show()
-                        },
-                        modifier = Modifier.weight(1f).height(48.dp),
-                        shape = RoundedCornerShape(24.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-                    ) {
-                        Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Копия", fontWeight = FontWeight.SemiBold)
-                    }
-                }
-            }
-        }
+    }
 }
 
 @Composable
