@@ -137,7 +137,7 @@ fun InfoTab(settingsStore: SettingsStore) {
     var projectExpanded by rememberSaveable { mutableStateOf(true) }
     var isCheckingUpdates by remember { mutableStateOf(false) }
     var pendingManualRelease by remember { mutableStateOf<com.amurcanov.tgwsproxy.AppReleaseInfo?>(null) }
-    val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
+    val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1080")
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedCustomCfDomainEnabled by settingsStore.customCfDomainEnabled.collectAsStateWithLifecycle(initialValue = false)
@@ -1128,7 +1128,7 @@ private fun buildSupportReport(
         appendLine(context.getString(R.string.report_settings))
         appendLine(context.getString(R.string.report_mode, mode))
         appendLine(context.getString(R.string.report_ws_pool, poolSize))
-        append(context.getString(R.string.report_port, port.trim().ifBlank { "1443" }))
+        append(context.getString(R.string.report_port, port.trim().ifBlank { "1080" }))
         append(cfDomainLine)
         appendLine()
         appendLine()

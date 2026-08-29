@@ -82,6 +82,9 @@ object ProxyController {
         )
         ProxyTileService.requestSync(context)
     }
+
+    /** Обновляет конфигурацию DC адресов без перезапуска прокси */
+    fun updateDcConfig(context: Context, dcIps: String): Boolean {
 	fun updateDcConfig(context: Context, dcIps: String): Boolean {
         val result = ProxyService.updateDcConfig(dcIps)
         if (result) {
@@ -94,6 +97,7 @@ object ProxyController {
         ProxyTileService.requestSync(context)
         return result
     }
+
     private suspend fun ensureSecretKey(settingsStore: SettingsStore): String {
         val current = settingsStore.secretKey.first().trim()
         if (isValidSecret(current)) {

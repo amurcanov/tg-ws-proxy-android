@@ -14,6 +14,7 @@ interface ProxyLibrary : Library {
     fun SetPoolSize(size: Int)
     fun SetCfProxyCacheDir(cacheDir: String)
     fun SetCfProxyConfig(enabled: Int, priority: Int, userDomain: String)
+=======
 	fun UpdateDcConfig(dcIps: String): Int
     fun GetSecretWithPrefix(): Pointer?
     fun GetStats(): Pointer?
@@ -59,6 +60,9 @@ object NativeProxy {
         ProxyLibrary.INSTANCE.FreeString(ptr)
         return res
     }
+
+    /** Обновляет конфигурацию DC адресов без перезапуска прокси */
+    fun updateDcConfig(dcIps: String): Int {
 	fun updateDcConfig(dcIps: String): Int {
         return ProxyLibrary.INSTANCE.UpdateDcConfig(dcIps)
     }

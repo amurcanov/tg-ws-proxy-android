@@ -33,7 +33,7 @@ class ProxyService : Service() {
 
     // Saved intent extras for restart on kill / onTaskRemoved
     private var lastBindIp: String = "127.0.0.1"
-    private var lastPort: Int = 1443
+    private var lastPort: Int = 1080
     private var lastIps: String = ""
     private var lastPoolSize: Int = 4
     private var lastCfEnabled: Boolean = true
@@ -71,6 +71,9 @@ class ProxyService : Service() {
         val isRunning: StateFlow<Boolean> = _isRunning
         private val _isVerifiedRunning = MutableStateFlow(false)
         val isVerifiedRunning: StateFlow<Boolean> = _isVerifiedRunning
+        
+        /** Обновляет конфигурацию DC адресов без перезапуска прокси */
+        fun updateDcConfig(dcIps: String): Boolean {
 		
 		fun updateDcConfig(dcIps: String): Boolean {
             if (!_isRunning.value) return false
@@ -89,7 +92,7 @@ class ProxyService : Service() {
             ACTION_START -> {
                 LogManager.clearLogs()
                 val bindIp = intent.getStringExtra(EXTRA_BIND_IP) ?: "127.0.0.1"
-                val port = intent.getIntExtra(EXTRA_PORT, 1443)
+                val port = intent.getIntExtra(EXTRA_PORT, 1080)
                 val ips = intent.getStringExtra(EXTRA_IPS) ?: ""
                 val poolSize = intent.getIntExtra(EXTRA_POOL_SIZE, 4)
                 val cfEnabled = intent.getBooleanExtra(EXTRA_CFPROXY_ENABLED, true)

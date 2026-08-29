@@ -15,6 +15,10 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class ProxyTileService : TileService() {
+
+    // Получаем доступ к NativeProxy для статистики
+    private val nativeProxy = NativeProxy
+
 	private val nativeProxy = NativeProxy
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var listenJob: Job? = null
@@ -81,6 +85,8 @@ class ProxyTileService : TileService() {
             } else {
                 Tile.STATE_INACTIVE
             }
+            
+            // Улучшенная индикация: отображаем количество активных подключений и статус
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 subtitle = when {
                     state == Tile.STATE_INACTIVE -> getString(R.string.tile_disconnected)
@@ -95,11 +101,14 @@ class ProxyTileService : TileService() {
                         }
                     }
                 }
+            }
 			}
             contentDescription = label
             updateTile()
         }
     }
+    
+    private fun extractActiveConnections(stats: String?): Int {
 	private fun extractActiveConnections(stats: String?): Int {
         if (stats.isNullOrBlank()) return 0
         val idx = stats.indexOf("active=")
@@ -108,6 +117,7 @@ class ProxyTileService : TileService() {
         val end = stats.indexOf(" ", start)
         return stats.substring(start, if (end == -1) stats.length else end).toIntOrNull() ?: 0
     }
+
     companion object {
         fun requestSync(context: Context) {
             runCatching {
