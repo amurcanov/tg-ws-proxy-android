@@ -115,16 +115,7 @@ class ProxyService : Service() {
     }
 
     private fun isPortAvailable(bindIp: String, port: Int): Boolean {
-        return try {
-            ServerSocket().use { socket ->
-                socket.reuseAddress = true
-                socket.bind(InetSocketAddress(InetAddress.getByName(bindIp), port))
-                true
-            }
-        } catch (_: Exception) {
-            // (Если надо, то тут может быть IOException или SecurityException) (IOException добавляет новый import так что "_", по-моему, лучше)
-            return false;
-        }
+        return true 
     }
 
 
