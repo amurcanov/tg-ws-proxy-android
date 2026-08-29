@@ -46,6 +46,7 @@ class SettingsStore(private val context: Context) {
         val LOG_SHOW_ERROR = booleanPreferencesKey("log_show_error")
         val LOG_SHOW_NULL = booleanPreferencesKey("log_show_null")
         val IS_EXPERIMENTAL_MODE = booleanPreferencesKey("is_experimental_mode")
+        val STEALTH_MODE = booleanPreferencesKey("stealth_mode")
         val UPDATE_LAST_CHECK_AT = longPreferencesKey("update_last_check_at")
         val UPDATE_LATEST_VERSION = stringPreferencesKey("update_latest_version")
         val UPDATE_LAST_ERROR = stringPreferencesKey("update_last_error")
@@ -92,6 +93,7 @@ class SettingsStore(private val context: Context) {
     val logShowInfo: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_INFO] ?: DEFAULT_LOG_SHOW_INFO }
     val logShowError: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_ERROR] ?: DEFAULT_LOG_SHOW_ERROR }
     val logShowNull: Flow<Boolean> = context.dataStore.data.map { it[Keys.LOG_SHOW_NULL] ?: false }
+    val stealthMode: Flow<Boolean> = context.dataStore.data.map { it[Keys.STEALTH_MODE] ?: false }
     val updateLastCheckAt: Flow<Long> = context.dataStore.data.map { it[Keys.UPDATE_LAST_CHECK_AT] ?: 0L }
     val updateLatestVersion: Flow<String> = context.dataStore.data.map { it[Keys.UPDATE_LATEST_VERSION] ?: "" }
     val updateLastError: Flow<String> = context.dataStore.data.map { it[Keys.UPDATE_LAST_ERROR] ?: "" }
@@ -188,10 +190,11 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun saveAll(isDcAuto: Boolean, dc1: String, dc2: String, dc3: String, dc4: String, dc5: String, dc203: String,
+    suspend fun saveAllExtended(isDcAuto: Boolean, dc1: String, dc2: String, dc3: String, dc4: String, dc5: String, dc203: String,
                         dc1m: String, dc2m: String, dc3m: String, dc4m: String, dc5m: String, dc203m: String,
                         isExperimental: Boolean, bindIp: String, port: String, poolSize: Int,
-                        cfproxyEnabled: Boolean, customCfDomainEnabled: Boolean, customCfDomain: String, secretKey: String) {
+                        cfproxyEnabled: Boolean, customCfDomainEnabled: Boolean, customCfDomain: String, secretKey: String,
+                        stealthMode: Boolean) {
         context.dataStore.edit {
             it[Keys.IS_DC_AUTO] = isDcAuto
             it[Keys.DC1] = dc1
@@ -214,6 +217,15 @@ class SettingsStore(private val context: Context) {
             it[Keys.CUSTOM_CF_DOMAIN_ENABLED] = customCfDomainEnabled
             it[Keys.CUSTOM_CF_DOMAIN] = customCfDomain
             it[Keys.SECRET_KEY] = secretKey
+            it[Keys.STEALTH_MODE] = stealthMode
         }
+    }
+
+    suspend fun saveAll(isDcAuto: Boolean, dc1: String, dc2: String, dc3: String, dc4: String, dc5: String, dc203: String,
+                        dc1m: String, dc2m: String, dc3m: String, dc4m: String, dc5m: String, dc203m: String,
+                        isExperimental: Boolean, bindIp: String, port: String, poolSize: Int,
+                        cfproxyEnabled: Boolean, customCfDomainEnabled: Boolean, customCfDomain: String, secretKey: String) {
+        saveAllExtended(isDcAuto, dc1, dc2, dc3, dc4, dc5, dc203, dc1m, dc2m, dc3m, dc4m, dc5m, dc203m,
+            isExperimental, bindIp, port, poolSize, cfproxyEnabled, customCfDomainEnabled, customCfDomain, secretKey, false)
     }
 }
