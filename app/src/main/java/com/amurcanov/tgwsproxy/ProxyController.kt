@@ -85,6 +85,7 @@ object ProxyController {
 
     /** Обновляет конфигурацию DC адресов без перезапуска прокси */
     fun updateDcConfig(context: Context, dcIps: String): Boolean {
+	fun updateDcConfig(context: Context, dcIps: String): Boolean {
         val result = ProxyService.updateDcConfig(dcIps)
         if (result) {
             // Сохраняем новые настройки в SettingsStore для будущих запусков
