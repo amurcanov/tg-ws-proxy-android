@@ -84,7 +84,7 @@ fun SettingsTab(settingsStore: SettingsStore) {
     val savedDc4m by settingsStore.dc4m.collectAsStateWithLifecycle(initialValue = "")
     val savedDc5m by settingsStore.dc5m.collectAsStateWithLifecycle(initialValue = "")
     val savedDc203m by settingsStore.dc203m.collectAsStateWithLifecycle(initialValue = "")
-    val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
+    val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1080")
     val savedBindIp by settingsStore.bindIp.collectAsStateWithLifecycle(initialValue = "127.0.0.1")
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)

@@ -83,6 +83,20 @@ object ProxyController {
         ProxyTileService.requestSync(context)
     }
 
+    /** Обновляет конфигурацию DC адресов без перезапуска прокси */
+    fun updateDcConfig(context: Context, dcIps: String): Boolean {
+        val result = ProxyService.updateDcConfig(dcIps)
+        if (result) {
+            // Сохраняем новые настройки в SettingsStore для будущих запусков
+            // Это позволит использовать обновленные DC при следующем старте
+            Toast.makeText(context, "DC configuration updated", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "Failed to update DC config (proxy not running?)", Toast.LENGTH_SHORT).show()
+        }
+        ProxyTileService.requestSync(context)
+        return result
+    }
+
     private suspend fun ensureSecretKey(settingsStore: SettingsStore): String {
         val current = settingsStore.secretKey.first().trim()
         if (isValidSecret(current)) {

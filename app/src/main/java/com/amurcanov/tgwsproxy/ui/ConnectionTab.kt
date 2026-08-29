@@ -52,7 +52,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
     val isReady by settingsStore.isReady.collectAsStateWithLifecycle(initialValue = false)
 
     // Settings
-    val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1443")
+    val savedPort by settingsStore.port.collectAsStateWithLifecycle(initialValue = "1080")
     val savedBindIp by settingsStore.bindIp.collectAsStateWithLifecycle(initialValue = "127.0.0.1")
     val savedCfEnabled by settingsStore.cfproxyEnabled.collectAsStateWithLifecycle(initialValue = true)
     val savedPoolSize by settingsStore.poolSize.collectAsStateWithLifecycle(initialValue = 4)
@@ -95,7 +95,7 @@ fun ConnectionTab(settingsStore: SettingsStore) {
         }
     }
 
-    val port = savedPort.toIntOrNull() ?: 1443
+    val port = savedPort.toIntOrNull() ?: 1080
     val secretForUrl = remember(savedSecretKey) {
         val raw = savedSecretKey.trim()
         if (raw.isNotEmpty() && raw != "LOADING") raw else "00000000000000000000000000000000"

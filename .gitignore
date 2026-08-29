@@ -1,0 +1,49 @@
+```
+# Compiled and build artifacts
+*.class
+*.o
+*.obj
+*.so
+*.a
+*.dll
+*.exe
+*.out
+build/
+dist/
+target/
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+.gradle/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# Rust specific
+Cargo.lock
+```
