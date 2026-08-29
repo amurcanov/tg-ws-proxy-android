@@ -71,6 +71,12 @@ class ProxyService : Service() {
         val isRunning: StateFlow<Boolean> = _isRunning
         private val _isVerifiedRunning = MutableStateFlow(false)
         val isVerifiedRunning: StateFlow<Boolean> = _isVerifiedRunning
+		
+		fun updateDcConfig(dcIps: String): Boolean {
+            if (!_isRunning.value) return false
+            val result = NativeProxy.updateDcConfig(dcIps)
+            return result == 0
+        }
     }
 
     override fun onCreate() {
