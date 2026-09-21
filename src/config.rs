@@ -479,8 +479,9 @@ fn censor_domains(msg: &str) -> String {
             i += 1;
         }
         if start == i {
-            out.push(bytes[start] as char);
-            i += 1;
+            let ch = msg[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
             continue;
         }
         let token = &msg[start..i];
